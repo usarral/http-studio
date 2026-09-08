@@ -1,0 +1,56 @@
+# The root workspace of HTTP Studio.
+#
+# The project follows Clean Architecture: each crate is a layer, and the
+# dependencies always point inwards (towards `domain`).
+#
+#   cli ──────────► application ──────────► domain ◄────────── infrastructure
+#   (driving)        (use cases)            (pure core)        (driven/adapters)
+#
+# `domain` knows nobody. `infrastructure` implements the ports (traits) that
+# `domain` declares. `cli` is the composition root: the only place where
+# concrete adapters are instantiated and injected into the use cases.
+[workspace]
+resolver = "3"
+members = [
+    "crates/domain",
+    "crates/application",
+    "crates/infrastructure",
+    "crates/rpc",
+    "crates/tui",
+    "crates/cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+repository = "https://github.com/usarral/http-studio"
+authors = ["usarral"]
+
+# Nothing here goes to crates.io. Publishing would be all-or-nothing anyway —
+# `http-studio-cli` cannot be published while its path dependencies are not —
+# so the flag is set once for the workspace rather than crate by crate. It does
+# not affect `cargo install --path crates/cli`, which is how the README says to
+# build from source.
+publish = false
+
+# The lints shared by every layer. `clippy::pedantic` at warn level keeps the
+# bar high without blocking the build during development.
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+module_name_repetitions = "allow"
+doc_markdown = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

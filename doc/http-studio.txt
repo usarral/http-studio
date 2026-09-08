@@ -1,0 +1,148 @@
+*http-studio.txt*  An HTTP client whose engine is decoupled from its interface
+
+==============================================================================
+CONTENTS                                                        *http-studio*
+
+  1. Introduction ........................... |http-studio-introduction|
+  2. Installation ........................... |http-studio-installation|
+  3. Configuration .......................... |http-studio-configuration|
+  4. Commands ............................... |http-studio-commands|
+  5. Mappings ............................... |http-studio-mappings|
+  6. How it finds the request ............... |http-studio-resolution|
+  7. Common problems ........................ |http-studio-problems|
+
+==============================================================================
+1. INTRODUCTION                                      *http-studio-introduction*
+
+Runs the request from the `.http` file under the cursor and shows the response
+in a buffer.
+
+The plugin resolves no variables, decides no precedence and formats no
+responses: it speaks JSON-RPC with `hts serve` and draws what arrives. That
+means the CLI, the TUI and this plugin give exactly the same result for the
+same request.
+
+It needs the `hts` binary on the PATH and Neovim 0.10 or newer.
+
+==============================================================================
+2. INSTALLATION                                      *http-studio-installation*
+
+It needs `hts` on the PATH and Neovim 0.10 or newer.
+
+With lazy.nvim: >lua
+
+    {
+      "usarral/http-studio",
+      config = function()
+        require("http-studio").setup()
+      end,
+      ft = "http",
+    }
+<
+The repository is both the Rust workspace and the plugin: `lua/`, `plugin/`
+and `doc/` hang off the root, so any manager installs it without `rtp` tricks.
+
+To develop against a local copy, point at the directory instead of the remote
+repository, and at the freshly built binary: >lua
+
+    {
+      dir = "~/work/http-studio",
+      ft = "http",
+      config = function()
+        require("http-studio").setup({
+          cmd = vim.fn.expand("~/work/http-studio/target/debug/hts"),
+        })
+      end,
+    }
+<
+
+==============================================================================
+3. CONFIGURATION                                    *http-studio-configuration*
+
+                                                        *http-studio.setup()*
+>lua
+    require("http-studio").setup({
+      cmd = "hts",            -- path to the binary
+      workspace = nil,        -- root; when nil, `hts` discovers it
+      environment = nil,      -- active environment
+      keymaps = true,         -- default mappings under <leader>h
+    })
+<
+`workspace` is only needed when you open files outside the workspace: by
+default `hts` walks up from the current directory until it finds
+`collections/` or `http-client.env.json`, just as git does with `.git`.
+
+==============================================================================
+4. COMMANDS                                              *http-studio-commands*
+
+                                                                    *:HtsRun*
+:HtsRun            Runs the request under the cursor.
+
+                                                                *:HtsPreview*
+:HtsPreview        Resolves it without sending it, and lists every variable
+                   with the scope it came from.
+
+                                                                 *:HtsCancel*
+:HtsCancel         Aborts the execution in flight.
+
+                                                                   *:HtsPick*
+:HtsPick           A picker with every request in the workspace.
+
+                                                                    *:HtsEnv*
+:HtsEnv [name]     Changes environment. With no argument, it asks.
+
+                                                                *:HtsHistory*
+:HtsHistory [n]    The last n executions from the local index (20 by default).
+
+                                                                 *:HtsReload*
+:HtsReload         Discards the workspace cache and restarts the server.
+                   Use it after adding or renaming requests.
+
+                                                                   *:HtsStop*
+:HtsStop           Stops the server.
+
+==============================================================================
+5. MAPPINGS                                              *http-studio-mappings*
+
+With `keymaps = true` (the default), only in `http` buffers:
+
+    <leader>hr    run
+    <leader>hp    preview
+    <leader>he    environment
+    <leader>hf    pick a request
+
+To map them your own way, use `keymaps = false` and the |<Plug>|s: >lua
+
+    vim.keymap.set("n", "<localleader>r", "<Plug>(hts-run)")
+    vim.keymap.set("n", "<localleader>p", "<Plug>(hts-preview)")
+    vim.keymap.set("n", "<localleader>e", "<Plug>(hts-env)")
+    vim.keymap.set("n", "<localleader>f", "<Plug>(hts-pick)")
+<
+In the response buffer, `q` closes the window.
+
+==============================================================================
+6. HOW IT FINDS THE REQUEST                            *http-studio-resolution*
+
+The plugin looks upwards for the nearest `###` and derives the block's name the
+same way the engine does: `# @name`, else the title after `###`, and else the
+block's position in the file.
+
+That name is **not** used as it stands. It is checked against the real
+identifiers the server returns, so were the rules ever to diverge, the symptom
+would be "I cannot find the request" and never running the wrong one.
+
+==============================================================================
+7. COMMON PROBLEMS                                       *http-studio-problems*
+
+"there is no request named X in the workspace"
+    The engine reads from disk. If you have just written the block, save the
+    file (`:w`) and try again. If you renamed it, use |:HtsReload|.
+
+"X is ambiguous"
+    There are several requests with that name and the file path does not break
+    the tie. Give one of them a different `# @name`.
+
+"could not start `hts serve`"
+    The binary is not on the PATH. Pass it in full in `cmd`.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:

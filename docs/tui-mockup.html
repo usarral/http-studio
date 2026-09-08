@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTTP Studio · TUI mockup</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#141822; --panel-alt:#11141d; --border:#232838;
+    --fg:#c9d1d9; --dim:#6b7488; --dimmer:#454c60;
+    --cyan:#56b6c2; --green:#7ec699; --yellow:#e5c07b;
+    --red:#e06c75; --magenta:#c678dd; --blue:#61afef; --orange:#d19a66;
+    --sel:#2a3145; --cursor:#c9d1d9;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#0a0c11;color:var(--fg);
+    font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace}
+  body{padding:24px;display:flex;flex-direction:column;align-items:center;gap:18px;min-height:100vh}
+
+  .intro{max-width:960px;width:100%;color:var(--dim);font-size:13px;line-height:1.65}
+  .intro h1{color:var(--fg);font-size:19px;margin:0 0 6px;letter-spacing:.2px}
+  .intro code{color:var(--yellow);background:#181c27;padding:1px 5px;border-radius:3px}
+  .intro strong{color:var(--fg);font-weight:600}
+
+  /* ── the "terminal" ──────────────────────────────────────────── */
+  .term{width:100%;max-width:1180px;background:var(--bg);border:1px solid var(--border);
+    border-radius:8px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.55);
+    font-size:13px;line-height:1.5;outline:none}
+  .term:focus{border-color:#31405c}
+
+  .chrome{display:flex;align-items:center;gap:8px;padding:8px 12px;
+    background:#0c0e14;border-bottom:1px solid var(--border);font-size:11px;color:var(--dimmer)}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .chrome .t{margin-left:6px;color:var(--dim)}
+
+  .tabline{display:flex;align-items:center;gap:0;background:var(--panel-alt);
+    border-bottom:1px solid var(--border);font-size:12px}
+  .tab{padding:5px 14px;color:var(--dim);border-right:1px solid var(--border)}
+  .tab.on{background:var(--bg);color:var(--fg);box-shadow:inset 0 2px 0 var(--blue)}
+  .tabline .spacer{flex:1}
+  .envchip{padding:5px 14px;color:var(--green);border-left:1px solid var(--border)}
+  .envchip b{color:var(--dim);font-weight:400}
+
+  .grid{display:grid;grid-template-columns:230px 1fr 1fr;height:432px}
+  .pane{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;
+    background:var(--bg)}
+  .pane:last-child{border-right:none}
+  .pane.focus{background:var(--panel)}
+  .ptitle{padding:4px 10px;font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;
+    color:var(--dimmer);border-bottom:1px solid var(--border);
+    display:flex;justify-content:space-between;background:var(--panel-alt)}
+  .pane.focus .ptitle{color:var(--blue);background:#151a26}
+  .body{flex:1;overflow:hidden;padding:5px 0;position:relative}
+  pre{margin:0;font:inherit;white-space:pre;overflow:hidden}
+  .row{padding:0 10px;min-height:19.5px}
+  .row.cur{background:var(--sel)}
+  .pane.focus .row.cur{background:#31405c}
+  .cursorchar{background:var(--cursor);color:var(--bg)}
+  .pane.focus .row.cur .gutter{color:var(--yellow)}
+
+  .gutter{color:var(--dimmer);display:inline-block;width:2.5ch;text-align:right;margin-right:1.2ch}
+  .m-get{color:var(--green)}    .m-post{color:var(--yellow)}
+  .m-put{color:var(--blue)}     .m-del{color:var(--red)}
+  .file{color:var(--cyan)}
+  .kw{color:var(--magenta)}     .hdr{color:var(--blue)}
+  .var{color:var(--orange)}     .cmt{color:var(--dimmer)}
+  .str{color:var(--green)}      .num{color:var(--orange)}
+  .key{color:var(--cyan)}
+  .ok{color:var(--green)}       .err{color:var(--red)}
+  .dim{color:var(--dim)}        .warn{color:var(--yellow)}
+  .match{background:#4a3f1e;color:#f0d99a}
+
+  /* ── the floating variables pane ─────────────────────────────── */
+  .overlay{position:absolute;inset:auto 0 0 0;background:#0c0e14;border-top:1px solid var(--border);
+    padding:7px 10px;font-size:12px;max-height:60%;overflow:hidden}
+  .overlay h4{margin:0 0 5px;font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--blue)}
+  .vrow{display:grid;grid-template-columns:11ch 1fr 17ch;gap:8px;padding:1px 0}
+  .vrow .o{color:var(--dimmer);text-align:right}
+
+  /* ── status line ─────────────────────────────────────────────── */
+  .status{display:flex;align-items:stretch;background:#0c0e14;border-top:1px solid var(--border);
+    font-size:12px;min-height:26px}
+  .mode{padding:4px 13px;font-weight:700;letter-spacing:.7px;color:#0b0d12}
+  .mode.NORMAL{background:var(--blue)} .mode.INSERT{background:var(--green)}
+  .mode.VISUAL{background:var(--magenta)} .mode.COMMAND{background:var(--yellow)}
+  .mode.SEARCH{background:var(--orange)}
+  .scrap{padding:4px 12px;color:var(--fg);background:#161b26;display:flex;align-items:center}
+  .stmsg{flex:1;padding:4px 12px;color:var(--dim);display:flex;align-items:center;min-width:0}
+  .stmsg .ln{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pending{padding:4px 12px;color:var(--yellow);display:flex;align-items:center}
+  .pos{padding:4px 12px;color:var(--dim);display:flex;align-items:center}
+  .cmdline{padding:4px 12px;color:var(--fg);flex:1;display:flex;align-items:center}
+  .caret{display:inline-block;width:8px;height:15px;background:var(--fg);
+    vertical-align:-3px;animation:blink 1.05s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  .hint{max-width:1180px;width:100%;display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:9px 26px;
+    font-size:12px;color:var(--dim)}
+  .hint div{display:flex;gap:9px}
+  .hint kbd{background:#181c27;border:1px solid var(--border);border-bottom-width:2px;
+    border-radius:4px;padding:0 6px;color:var(--yellow);font:inherit;font-size:11px;
+    white-space:nowrap;flex-shrink:0}
+  .foot{max-width:1180px;width:100%;color:var(--dimmer);font-size:11.5px;line-height:1.6}
+  .nofocus{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:rgba(10,12,17,.82);color:var(--dim);font-size:13px;z-index:5;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="intro">
+  <h1>HTTP Studio · TUI mockup</h1>
+  <p>An <strong>interactive</strong> mockup: click inside and try the keys for real. It is not a
+  screenshot — the <em>motion</em> engine, the modes, the search and the command line are all
+  implemented. It is here to settle the ergonomics <strong>before</strong> writing them in
+  ratatui.</p>
+  <p>Start with <code>j</code> <code>k</code> to move, <code>Enter</code> to open a request,
+  <code>&lt;Space&gt;r</code> to run it (you will see the engine's event streaming) and
+  <code>:help</code> for the rest.</p>
+</div>
+
+<div class="term" id="term" tabindex="0">
+  <div class="chrome">
+    <span class="dot" style="background:#e06c75"></span>
+    <span class="dot" style="background:#e5c07b"></span>
+    <span class="dot" style="background:#7ec699"></span>
+    <span class="t">hts tui — ~/work/my-api</span>
+  </div>
+
+  <div class="tabline">
+    <div class="tab on">echo.http</div>
+    <div class="tab">auth.http</div>
+    <div class="tab">admin/users.http</div>
+    <div class="spacer"></div>
+    <div class="envchip"><b>env:</b> <span id="envname">dev</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="pane" id="pane-tree">
+      <div class="ptitle"><span>collections</span><span id="treecount"></span></div>
+      <div class="body"><pre id="tree"></pre></div>
+    </div>
+    <div class="pane" id="pane-editor">
+      <div class="ptitle"><span>request</span><span id="reqid" class="dim"></span></div>
+      <div class="body"><pre id="editor"></pre></div>
+    </div>
+    <div class="pane" id="pane-response">
+      <div class="ptitle"><span>response</span><span id="respmeta" class="dim"></span></div>
+      <div class="body">
+        <pre id="response"></pre>
+        <div class="overlay" id="vars" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status">
+    <div class="mode NORMAL" id="mode">NORMAL</div>
+    <div class="scrap" id="scrap"></div>
+    <div class="stmsg" id="stmsg"><span class="ln"></span></div>
+    <div class="pending" id="pending"></div>
+    <div class="pos" id="pos"></div>
+  </div>
+  <div class="nofocus" id="nofocus">click to activate the keyboard</div>
+</div>
+
+<div class="hint">
+  <div><kbd>h j k l</kbd><span>move</span></div>
+  <div><kbd>gg</kbd> <kbd>G</kbd><span>start / end</span></div>
+  <div><kbd>3j</kbd><span>counts</span></div>
+  <div><kbd>Ctrl-d</kbd> <kbd>Ctrl-u</kbd><span>half a page</span></div>
+  <div><kbd>Tab</kbd> / <kbd>Ctrl-w h l</kbd><span>change pane</span></div>
+  <div><kbd>Enter</kbd><span>open a request</span></div>
+  <div><kbd>w</kbd> <kbd>b</kbd> <kbd>0</kbd> <kbd>$</kbd><span>word / line</span></div>
+  <div><kbd>i</kbd> <kbd>a</kbd> <kbd>o</kbd> <kbd>Esc</kbd><span>insert</span></div>
+  <div><kbd>v</kbd><span>visual</span></div>
+  <div><kbd>/</kbd> <kbd>n</kbd> <kbd>N</kbd><span>search</span></div>
+  <div><kbd>Space r</kbd><span>run the request</span></div>
+  <div><kbd>Space p</kbd><span>preview without sending</span></div>
+  <div><kbd>Space v</kbd><span>variables and their origin</span></div>
+  <div><kbd>Space e</kbd><span>change environment</span></div>
+  <div><kbd>:</kbd><span>commands</span></div>
+  <div><kbd>:help</kbd><span>the full help</span></div>
+</div>
+
+<div class="foot">
+  The response pane fills up by consuming the very sequence of events the engine emits
+  (<code>resolved → head → body_chunk → completed</code>), which is what makes live progress
+  possible. The TUI reimplements nothing: it links <code>http-studio-application</code> in
+  process.
+</div>
+
+<script>
+"use strict";
+
+/* ═══ The example workspace's data ═════════════════════════════════════ */
+
+const REQUESTS = {
+  "echo/get": {
+    method:"GET", file:"echo.http",
+    src:[
+      "### GET with a query",
+      "# @name get",
+      "# @description Checks that the query and the variables resolve.",
+      "@page = 1",
+      "GET {{base_url}}/get",
+      "  ?limit=10",
+      "  &page={{page}}",
+      "Accept: {{accept}}",
+      "User-Agent: {{user_agent}}",
+    ],
+    url:"https://postman-echo.com/get?limit=10&page=1",
+    status:200, ms:218, bytes:241,
+    head:[
+      ["content-type","application/json; charset=utf-8"],
+      ["vary","Accept-Encoding"],
+      ["cf-cache-status","DYNAMIC"],
+      ["server","cloudflare"],
+    ],
+    body:[
+      "{",
+      '  "args": {',
+      '    "limit": "10",',
+      '    "page": "1"',
+      "  },",
+      '  "headers": {',
+      '    "accept": "application/json",',
+      '    "host": "postman-echo.com",',
+      '    "user-agent": "http-studio-dev"',
+      "  },",
+      '  "url": "https://postman-echo.com/get?limit=10&page=1"',
+      "}",
+    ],
+  },
+  "echo/post-json": {
+    method:"POST", file:"echo.http",
+    src:[
+      "### POST with a JSON body",
+      "# @name post-json",
+      "# @description The token comes from the private file, which is not committed.",
+      "POST {{base_url}}/post",
+      "Accept: {{accept}}",
+      "Content-Type: application/json",
+      "",
+      "{",
+      '  "user": "{{user_agent}}",',
+      '  "token": "{{api_token}}"',
+      "}",
+    ],
+    url:"https://postman-echo.com/post",
+    status:200, ms:278, bytes:512,
+    head:[
+      ["content-type","application/json; charset=utf-8"],
+      ["content-length","512"],
+    ],
+    body:[
+      "{",
+      '  "json": {',
+      '    "user": "http-studio-dev",',
+      '    "token": "example-token"',
+      "  },",
+      '  "url": "https://postman-echo.com/post"',
+      "}",
+    ],
+  },
+  "auth/login": {
+    method:"POST", file:"auth.http",
+    src:[
+      "### Sign in",
+      "# @name login",
+      "@email = demo@example.com",
+      "POST {{base_url}}/auth/login",
+      "Accept: application/json",
+      "Content-Type: application/json",
+      "",
+      '{"email": "{{email}}", "password": "{{password}}"}',
+    ],
+    url:"https://postman-echo.com/auth/login",
+    status:401, ms:96, bytes:58,
+    head:[
+      ["content-type","application/json"],
+      ["www-authenticate",'Bearer realm="api"'],
+    ],
+    body:[ "{", '  "error": "invalid_credentials"', "}" ],
+  },
+  "auth/refresh": {
+    method:"POST", file:"auth.http",
+    src:[
+      "### Refresh the token",
+      "# @name refresh",
+      "POST {{base_url}}/auth/refresh",
+      "Content-Type: application/x-www-form-urlencoded",
+      "",
+      "grant_type=refresh_token&refresh_token={{refresh_token}}",
+    ],
+    url:"https://postman-echo.com/auth/refresh",
+    status:200, ms:134, bytes:180,
+    head:[["content-type","application/json"]],
+    body:[ "{", '  "access_token": "eyJhbGciOi…",', '  "expires_in": 3600', "}" ],
+  },
+  "admin/users/list": {
+    method:"GET", file:"admin/users.http",
+    src:[
+      "### Listar usuarios",
+      "# @name list",
+      "GET {{base_url}}/admin/users",
+      "  ?page=1",
+      "  &per_page=25",
+      "Authorization: Bearer {{api_token}}",
+    ],
+    url:"https://postman-echo.com/admin/users?page=1&per_page=25",
+    status:200, ms:412, bytes:2048,
+    head:[["content-type","application/json"],["x-total-count","137"]],
+    body:[ "{", '  "total": 137,', '  "items": [ … ]', "}" ],
+  },
+  "admin/users/create": {
+    method:"POST", file:"admin/users.http",
+    src:[
+      "### Crear usuario",
+      "# @name create",
+      "POST {{base_url}}/admin/users",
+      "Authorization: Bearer {{api_token}}",
+      "Content-Type: application/json",
+      "",
+      '{"email": "nuevo@example.com", "role": "viewer"}',
+    ],
+    url:"https://postman-echo.com/admin/users",
+    status:201, ms:305, bytes:96,
+    head:[["content-type","application/json"],["location","/admin/users/512"]],
+    body:[ "{", '  "id": 512,', '  "email": "nuevo@example.com"', "}" ],
+  },
+};
+
+const FILES = [
+  { file:"echo.http",        ids:["echo/get","echo/post-json"] },
+  { file:"auth.http",        ids:["auth/login","auth/refresh"] },
+  { file:"admin/users.http", ids:["admin/users/list","admin/users/create"] },
+];
+
+const ENVS = {
+  dev:  { base_url:"https://postman-echo.com", user_agent:"http-studio-dev",  api_token:"tok-dev-…" },
+  prod: { base_url:"https://api.example.com",  user_agent:"http-studio-prod", api_token:"tok-prod-…" },
+};
+const COLLECTION_VARS = { accept:"application/json" };
+
+/* ═══ State ════════════════════════════════════════════════════════════ */
+
+const S = {
+  mode:"NORMAL",
+  focus:0,                       // 0 tree · 1 editor · 2 response
+  env:"dev",
+  current:"echo/get",
+  folded:{},
+  tree:{ cur:0 },
+  editor:{ line:4, col:0, visualFrom:null },
+  response:{ cur:0, lines:[], meta:"", running:false },
+  count:"",                      // contador pendiente (3j)
+  op:"",                         // operador pendiente (g, Ctrl-w, Space)
+  cmd:"", cmdKind:"",            // command line / search
+  search:"", msg:"", msgClass:"dim",
+  showVars:false,
+};
+
+const PANES = ["tree","editor","response"];
+const VISIBLE = 21;              // visible rows per pane
+
+/* ═══ Helpers ══════════════════════════════════════════════════════════ */
+
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const clamp = (n,lo,hi) => Math.max(lo, Math.min(hi, n));
+const $ = id => document.getElementById(id);
+
+function flash(text, cls){ S.msg = text; S.msgClass = cls || "dim"; }
+
+/** The tree's rows: one per file and one per visible request. */
+function treeRows(){
+  const rows = [];
+  for (const f of FILES){
+    rows.push({ kind:"file", file:f.file });
+    if (!S.folded[f.file]) for (const id of f.ids) rows.push({ kind:"req", id });
+  }
+  return rows;
+}
+
+const req = () => REQUESTS[S.current];
+
+/** The effective variables with their originating scope, in precedence order. */
+function resolvedVars(){
+  const out = new Map();
+  for (const [k,v] of Object.entries(COLLECTION_VARS)) out.set(k,{v,o:"collection"});
+  for (const line of req().src){
+    const m = line.match(/^@([\w.-]+)\s*:?=\s*(.*)$/);
+    if (m) out.set(m[1], { v:m[2], o:"request" });
+  }
+  for (const [k,v] of Object.entries(ENVS[S.env])) out.set(k,{v,o:"environment:"+S.env});
+  return out;
+}
+
+/** Interpolates {{var}} for the preview. */
+function interpolate(text){
+  const vars = resolvedVars();
+  return text.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (all,name) =>
+    vars.has(name) ? vars.get(name).v : all);
+}
+
+/* ═══ Highlighting ═════════════════════════════════════════════════════ */
+
+function hiHttp(line){
+  let s = esc(line);
+  if (/^\s*###/.test(line))       return `<span class="kw">${s}</span>`;
+  if (/^\s*#\s*@/.test(line))     return `<span class="cmt">${s.replace(/(@\w+)/,'<span class="key">$1</span>')}</span>`;
+  if (/^\s*(#|\/\/)/.test(line))  return `<span class="cmt">${s}</span>`;
+  if (/^\s*@/.test(line))         return s.replace(/^(\s*@[\w.-]+)/, '<span class="key">$1</span>');
+  if (/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/.test(line))
+    s = s.replace(/^(\w+)/, '<span class="m-'+(line.startsWith("GET")?"get":line.startsWith("POST")?"post":line.startsWith("DELETE")?"del":"put")+'">$1</span>');
+  else if (/^[A-Za-z-]+:/.test(line))
+    s = s.replace(/^([A-Za-z-]+)(:)/, '<span class="hdr">$1</span>$2');
+  return s.replace(/(\{\{[^}]*\}\})/g, '<span class="var">$1</span>');
+}
+
+function hiJson(line){
+  return esc(line)
+    .replace(/(&quot;[^&]*?&quot;)(\s*:)/g, '<span class="key">$1</span>$2')
+    .replace(/:\s*(&quot;[^&]*?&quot;)/g, ': <span class="str">$1</span>')
+    .replace(/:\s*(\d+)/g, ': <span class="num">$1</span>');
+}
+
+function markSearch(html){
+  if (!S.search) return html;
+  // Only the text gets highlighted, never inside an already generated tag. The
+  // sentinels make the loose text at either end count too.
+  const re = new RegExp("("+S.search.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","gi");
+  return (">"+html+"<")
+    .replace(/>([^<]*)</g, (all, text) =>
+      ">" + text.replace(re,'<span class="match">$1</span>') + "<")
+    .slice(1,-1);
+}
+
+/* ═══ Drawing ══════════════════════════════════════════════════════════ */
+
+function renderTree(){
+  const rows = treeRows();
+  S.tree.cur = clamp(S.tree.cur, 0, rows.length-1);
+  const focused = S.focus === 0;
+
+  $("tree").innerHTML = rows.map((r,i)=>{
+    const cur = focused && i === S.tree.cur;
+    let inner;
+    if (r.kind === "file"){
+      const arrow = S.folded[r.file] ? "▸" : "▾";
+      inner = `<span class="dim">${arrow}</span> <span class="file">${esc(r.file)}</span>`;
+    } else {
+      const R = REQUESTS[r.id];
+      const cls = R.method==="GET"?"m-get":R.method==="POST"?"m-post":"m-put";
+      const on = r.id === S.current ? ' style="font-weight:600"' : "";
+      const name = r.id.split("/").pop();
+      inner = `  <span class="${cls}">${R.method.padEnd(4)}</span> <span${on}>${esc(name)}</span>`;
+    }
+    return `<div class="row${cur?" cur":""}">${markSearch(inner)}</div>`;
+  }).join("");
+
+  $("treecount").textContent = Object.keys(REQUESTS).length + " req";
+}
+
+function renderEditor(){
+  const src = req().src;
+  S.editor.line = clamp(S.editor.line, 0, src.length-1);
+  const focused = S.focus === 1;
+  const vf = S.editor.visualFrom;
+  const lo = vf === null ? -1 : Math.min(vf, S.editor.line);
+  const hi = vf === null ? -1 : Math.max(vf, S.editor.line);
+
+  $("editor").innerHTML = src.map((line,i)=>{
+    const cur = focused && i === S.editor.line;
+    const inVisual = i >= lo && i <= hi;
+    let html = markSearch(hiHttp(line));
+
+    // A block cursor over the character, as in vim.
+    if (cur && S.mode !== "COMMAND"){
+      const c = clamp(S.editor.col, 0, Math.max(0, line.length-1));
+      const ch = line[c] || " ";
+      html = markSearch(hiHttp(line.slice(0,c))) +
+             `<span class="cursorchar">${esc(ch)}</span>` +
+             markSearch(hiHttp(line.slice(c+1)));
+    }
+    const g = String(i+1).padStart(2);
+    const bg = inVisual && !cur ? ' style="background:#2c2440"' : "";
+    return `<div class="row${cur?" cur":""}"${bg}><span class="gutter">${g}</span>${html}</div>`;
+  }).join("");
+
+  $("reqid").textContent = S.current;
+}
+
+function renderResponse(){
+  const lines = S.response.lines;
+  const focused = S.focus === 2;
+  S.response.cur = clamp(S.response.cur, 0, Math.max(0, lines.length-1));
+  const start = clamp(S.response.cur - VISIBLE + 4, 0, Math.max(0, lines.length - VISIBLE));
+
+  $("response").innerHTML = lines.slice(start, start+VISIBLE).map((l,idx)=>{
+    const i = start + idx;
+    const cur = focused && i === S.response.cur;
+    const html = l.raw ? l.text : markSearch(l.json ? hiJson(l.text) : esc(l.text));
+    const cls = l.cls ? ` class="${l.cls}"` : "";
+    return `<div class="row${cur?" cur":""}"><span${cls}>${html}</span></div>`;
+  }).join("");
+
+  $("respmeta").textContent = S.response.meta;
+}
+
+function renderVars(){
+  const box = $("vars");
+  if (!S.showVars){ box.style.display = "none"; return; }
+  box.style.display = "block";
+  const rows = [...resolvedVars().entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  box.innerHTML = `<h4>variables · the last scope wins</h4>` + rows.map(([k,{v,o}])=>
+    `<div class="vrow"><span class="key">${esc(k)}</span>` +
+    `<span class="str">${esc(v)}</span>` +
+    `<span class="o">${esc(o)}</span></div>`).join("");
+}
+
+function renderStatus(){
+  $("mode").textContent = S.mode;
+  $("mode").className = "mode " + S.mode;
+
+  const R = req();
+  $("scrap").innerHTML = `<span class="${R.method==="GET"?"m-get":"m-post"}">${R.method}</span>`
+    + `&nbsp;<span class="dim">${esc(S.current)}</span>`;
+
+  if (S.mode === "COMMAND" || S.mode === "SEARCH"){
+    $("stmsg").innerHTML = `<span class="cmdline">${esc(S.cmdKind + S.cmd)}<span class="caret"></span></span>`;
+  } else {
+    $("stmsg").innerHTML = `<span class="ln ${S.msgClass}">${S.msg}</span>`;
+  }
+
+  $("pending").textContent = S.count + (S.op === "\x17" ? "^W" : S.op === " " ? "␣" : S.op);
+  $("pos").textContent = S.focus === 1
+    ? `${S.editor.line+1}:${S.editor.col+1}`
+    : PANES[S.focus];
+
+  document.querySelectorAll(".pane").forEach((p,i)=>p.classList.toggle("focus", i === S.focus));
+  $("envname").textContent = S.env;
+}
+
+function render(){
+  renderTree(); renderEditor(); renderResponse(); renderVars(); renderStatus();
+}
+
+/* ═══ A simulated execution: the engine's event stream ═════════════════ */
+
+let runTimers = [];
+function clearRun(){
+  // Timeout and interval ids do not share a space in every browser, so they
+  // are cancelled both ways.
+  runTimers.forEach(id => { clearTimeout(id); clearInterval(id); });
+  runTimers = [];
+}
+const at = (ms, fn) => runTimers.push(setTimeout(fn, ms));
+
+function push(text, cls, opts){
+  S.response.lines.push(Object.assign({ text, cls }, opts||{}));
+  renderResponse();
+}
+
+function runRequest(){
+  clearRun();
+  const R = req();
+  S.response.lines = []; S.response.cur = 0; S.response.running = true;
+  S.showVars = false;
+
+  // resolved
+  push(`${R.method} ${interpolate(R.url)}`, "");
+  push("", "");
+  push("⠋ conectando…", "dim");
+  S.response.meta = "en vuelo";
+  render();
+
+  const spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+  let k = 0;
+  const tick = setInterval(()=>{
+    const l = S.response.lines[2];
+    if (!l || !l.text.includes("conectando")) return clearInterval(tick);
+    l.text = spin[k++ % spin.length] + " conectando…";
+    renderResponse();
+  }, 80);
+  runTimers.push(tick);
+
+  // head
+  at(620, ()=>{
+    clearInterval(tick);
+    S.response.lines.pop();
+    const cls = R.status < 300 ? "ok" : "err";
+    push(`${R.status} ${R.status===200?"OK":R.status===201?"Created":R.status===401?"Unauthorized":""}  HTTP/2.0`, cls);
+    for (const [h,v] of R.head) push(`${h}: ${v}`, "dim");
+    push("", "");
+    S.response.meta = "cabeceras";
+    renderStatus();
+  });
+
+  // body_chunk × n
+  R.body.forEach((l,i)=>at(760 + i*55, ()=>{
+    push(l, "", { json:true });
+    S.response.meta = `${Math.round((i+1)/R.body.length*R.bytes)} B`;
+    renderStatus();
+  }));
+
+  // completed
+  at(760 + R.body.length*55 + 120, ()=>{
+    push("", "");
+    push(`${R.ms} ms · ${R.bytes} bytes`, "dim");
+    S.response.meta = `${R.status} · ${R.ms} ms`;
+    S.response.running = false;
+    flash(R.status < 300 ? "completed" : `response ${R.status}`,
+          R.status < 300 ? "ok" : "err");
+    S.focus = 2;
+    render();
+  });
+}
+
+function previewRequest(){
+  clearRun();
+  S.response.lines = []; S.response.cur = 0;
+  push("preview · nothing has been sent", "warn");
+  push("", "");
+  for (const line of req().src){
+    if (/^\s*(###|#|@)/.test(line)) continue;
+    push(interpolate(line), "");
+  }
+  S.response.meta = "preview";
+  flash("preview: the request resolved without sending it", "warn");
+  S.focus = 2; render();
+}
+
+/* ═══ Commands ═════════════════════════════════════════════════════════ */
+
+function openCurrent(){
+  const row = treeRows()[S.tree.cur];
+  if (row.kind === "file"){
+    S.folded[row.file] = !S.folded[row.file];
+    flash((S.folded[row.file] ? "plegado " : "desplegado ") + row.file);
+    return;
+  }
+  S.current = row.id;
+  S.editor.line = req().src.findIndex(l => /^(GET|POST|PUT|PATCH|DELETE)/.test(l));
+  if (S.editor.line < 0) S.editor.line = 0;
+  S.editor.col = 0;
+  S.response.lines = []; S.response.meta = "";
+  S.focus = 1;
+  flash("opened " + row.id);
+}
+
+function runCommand(raw){
+  const [cmd, ...rest] = raw.trim().split(/\s+/);
+  const arg = rest.join(" ");
+  switch (cmd){
+    case "run": case "r":      runRequest(); break;
+    case "preview": case "p":  previewRequest(); break;
+    case "env":
+      if (ENVS[arg]){ S.env = arg; flash("environment → " + arg, "ok"); }
+      else flash("unknown environment: " + (arg||"(empty)") + " · use dev or prod", "err");
+      break;
+    case "vars": case "v":     S.showVars = !S.showVars; break;
+    case "cancel":             clearRun(); S.response.running=false; flash("execution cancelled","warn"); break;
+    case "history": case "h":
+      S.response.lines = [];
+      push("the latest executions · hts history", "dim"); push("", "");
+      [["200","echo/get","218 ms"],["401","auth/login","96 ms"],
+       ["200","echo/post-json","278 ms"],["201","admin/users/create","305 ms"]]
+        .forEach(([st,id,ms])=>push(`${st}  ${id.padEnd(20)} ${ms}`, st==="401"?"err":"ok"));
+      S.response.meta = "history"; S.focus = 2;
+      break;
+    case "w":                  flash("saved " + req().file, "ok"); break;
+    case "q": case "qa":       flash("(in the real TUI, this would quit)", "dim"); break;
+    case "help": case "h?":
+      S.response.lines = [];
+      [["MOVEMENT",""],["  h j k l","move the cursor"],["  gg / G","first / last line"],
+       ["  3j","count + motion"],["  w / b","word forwards / backwards"],["  0 / $","start / end of line"],
+       ["  Ctrl-d / Ctrl-u","half a page"],["",""],
+       ["PANES",""],["  Tab","next pane"],["  Ctrl-w h/l","pane to the left / right"],
+       ["  Enter","open a request or fold a file"],["",""],
+       ["EDITING",""],["  i / a / o","insert"],["  v","visual mode by lines"],["  Esc","back to normal"],["",""],
+       ["SEARCH",""],["  /text","search"],["  n / N","next / previous"],["",""],
+       ["LEADER (Space)",""],["  <Space>r","run"],["  <Space>p","preview"],
+       ["  <Space>v","variables"],["  <Space>e","environment"],["",""],
+       ["COMMANDS",""],["  :run :preview :cancel",""],["  :env dev|prod",""],
+       ["  :vars :history",""],["  :w :q",""]]
+        .forEach(([k,v])=> push(v ? `${k.padEnd(24)} ${v}` : k, v ? "" : "key"));
+      S.response.meta = "help"; S.focus = 2;
+      break;
+    default: flash("unknown command: " + cmd, "err");
+  }
+}
+
+function doSearch(dir){
+  if (!S.search) return;
+  const src = req().src;
+  const n = src.length;
+  for (let step = 1; step <= n; step++){
+    const i = ((S.editor.line + dir*step) % n + n) % n;
+    if (src[i].toLowerCase().includes(S.search.toLowerCase())){
+      S.editor.line = i;
+      S.editor.col = src[i].toLowerCase().indexOf(S.search.toLowerCase());
+      S.focus = 1;
+      flash(`/${S.search}`);
+      return;
+    }
+  }
+  flash("pattern not found: " + S.search, "err");
+}
+
+/* ═══ Motions ══════════════════════════════════════════════════════════ */
+
+function moveVertical(delta){
+  if (S.focus === 0) S.tree.cur += delta;
+  else if (S.focus === 1) S.editor.line += delta;
+  else S.response.cur += delta;
+}
+
+function lastLine(){
+  if (S.focus === 0) return treeRows().length - 1;
+  if (S.focus === 1) return req().src.length - 1;
+  return Math.max(0, S.response.lines.length - 1);
+}
+
+function gotoLine(n){
+  if (S.focus === 0) S.tree.cur = n;
+  else if (S.focus === 1) S.editor.line = n;
+  else S.response.cur = n;
+}
+
+function wordMove(dir){
+  const line = req().src[S.editor.line] || "";
+  const re = /\S+/g; const spans = [];
+  let m; while ((m = re.exec(line))) spans.push(m.index);
+  if (dir > 0){
+    const next = spans.find(i => i > S.editor.col);
+    S.editor.col = next !== undefined ? next : Math.max(0, line.length-1);
+  } else {
+    const prev = [...spans].reverse().find(i => i < S.editor.col);
+    S.editor.col = prev !== undefined ? prev : 0;
+  }
+}
+
+/* ═══ Keyboard ═════════════════════════════════════════════════════════ */
+
+function onKey(e){
+  const k = e.key;
+
+  // — the command line and the search —
+  if (S.mode === "COMMAND" || S.mode === "SEARCH"){
+    e.preventDefault();
+    if (k === "Escape"){ S.mode = "NORMAL"; S.cmd = ""; }
+    else if (k === "Enter"){
+      const value = S.cmd; const kind = S.cmdKind;
+      S.mode = "NORMAL"; S.cmd = "";
+      if (kind === ":") runCommand(value);
+      else { S.search = value; doSearch(1); }
+    }
+    else if (k === "Backspace"){
+      if (S.cmd === "") { S.mode = "NORMAL"; }
+      else S.cmd = S.cmd.slice(0,-1);
+    }
+    else if (k.length === 1) S.cmd += k;
+    return render();
+  }
+
+  // — insert mode —
+  if (S.mode === "INSERT"){
+    if (k === "Escape"){
+      e.preventDefault(); S.mode = "NORMAL";
+      S.editor.col = Math.max(0, S.editor.col - 1);
+      flash("");
+      return render();
+    }
+    const src = req().src;
+    if (k === "Backspace"){
+      e.preventDefault();
+      const l = src[S.editor.line];
+      if (S.editor.col > 0){
+        src[S.editor.line] = l.slice(0, S.editor.col-1) + l.slice(S.editor.col);
+        S.editor.col--;
+      }
+    } else if (k === "Enter"){
+      e.preventDefault();
+      const l = src[S.editor.line];
+      src.splice(S.editor.line, 1, l.slice(0,S.editor.col), l.slice(S.editor.col));
+      S.editor.line++; S.editor.col = 0;
+    } else if (k.length === 1){
+      e.preventDefault();
+      const l = src[S.editor.line];
+      src[S.editor.line] = l.slice(0,S.editor.col) + k + l.slice(S.editor.col);
+      S.editor.col++;
+    }
+    return render();
+  }
+
+  // — normal / visual —
+  if (k === "Tab" || (e.ctrlKey && k === "w")){ e.preventDefault(); }
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(k)) e.preventDefault();
+
+  // Ctrl-w as the window operator
+  if (e.ctrlKey && k === "w"){ S.op = "\x17"; return render(); }
+  if (e.ctrlKey && (k === "d" || k === "u")){
+    e.preventDefault();
+    moveVertical(k === "d" ? 10 : -10);
+    return render();
+  }
+
+  if (S.op === "\x17"){                       // Ctrl-w · moving between panes
+    S.op = "";
+    if (k === "h") S.focus = Math.max(0, S.focus-1);
+    if (k === "l") S.focus = Math.min(2, S.focus+1);
+    if (k === "j" || k === "k") flash("the panes sit in a row: use h and l");
+    return render();
+  }
+
+  if (S.op === " "){                          // leader
+    S.op = "";
+    if (k === "r") runRequest();
+    else if (k === "p") previewRequest();
+    else if (k === "v"){ S.showVars = !S.showVars; flash(S.showVars ? "variables shown" : ""); }
+    else if (k === "e"){ S.env = S.env === "dev" ? "prod" : "dev"; flash("environment → " + S.env, "ok"); }
+    else flash("<Space>" + k + " is unassigned", "dim");
+    return render();
+  }
+
+  if (S.op === "g"){                          // gg
+    S.op = "";
+    if (k === "g"){ gotoLine(0); flash(""); }
+    return render();
+  }
+
+  // counts
+  if (/^[1-9]$/.test(k) || (k === "0" && S.count)){ S.count += k; return render(); }
+  const n = S.count ? parseInt(S.count,10) : 1;
+  const hadCount = !!S.count;
+  S.count = "";
+
+  switch (k){
+    case "j": case "ArrowDown":  moveVertical(n); break;
+    case "k": case "ArrowUp":    moveVertical(-n); break;
+    case "h": case "ArrowLeft":
+      if (S.focus === 1) S.editor.col = Math.max(0, S.editor.col - n);
+      else S.focus = Math.max(0, S.focus - 1);
+      break;
+    case "l": case "ArrowRight":
+      if (S.focus === 1){
+        const len = (req().src[S.editor.line]||"").length;
+        S.editor.col = Math.min(Math.max(0,len-1), S.editor.col + n);
+      } else S.focus = Math.min(2, S.focus + 1);
+      break;
+
+    case "g": S.op = "g"; break;
+    case "G": gotoLine(hadCount ? n-1 : lastLine()); break;
+    case "0": if (S.focus === 1) S.editor.col = 0; break;
+    case "$": if (S.focus === 1) S.editor.col = Math.max(0,(req().src[S.editor.line]||"").length-1); break;
+    case "w": if (S.focus === 1) wordMove(1); break;
+    case "b": if (S.focus === 1) wordMove(-1); break;
+
+    case "Tab": S.focus = (S.focus + 1) % 3; break;
+    case "Enter":
+      if (S.focus === 0) openCurrent();
+      else if (S.focus === 1) runRequest();
+      break;
+
+    case "i": if (S.focus === 1){ S.mode = "INSERT"; flash("-- INSERTAR --","ok"); } break;
+    case "a": if (S.focus === 1){ S.mode = "INSERT"; S.editor.col++; flash("-- INSERTAR --","ok"); } break;
+    case "o":
+      if (S.focus === 1){
+        req().src.splice(S.editor.line+1, 0, "");
+        S.editor.line++; S.editor.col = 0; S.mode = "INSERT"; flash("-- INSERTAR --","ok");
+      }
+      break;
+    case "v":
+      if (S.focus === 1){
+        S.mode = "VISUAL"; S.editor.visualFrom = S.editor.line; flash("-- VISUAL --","dim");
+      }
+      break;
+    case "Escape":
+      S.mode = "NORMAL"; S.editor.visualFrom = null; S.op = ""; S.search = ""; flash("");
+      break;
+
+    case "/": S.mode = "SEARCH"; S.cmdKind = "/"; S.cmd = ""; break;
+    case ":": S.mode = "COMMAND"; S.cmdKind = ":"; S.cmd = ""; break;
+    case "n": doSearch(1); break;
+    case "N": doSearch(-1); break;
+    case " ": S.op = " "; break;
+    case "?": runCommand("help"); break;
+  }
+
+  if (S.mode === "VISUAL" && !["j","k","G","g"].includes(k) && k !== "Escape"){
+    if (!["ArrowUp","ArrowDown"].includes(k)){ S.mode = "NORMAL"; S.editor.visualFrom = null; }
+  }
+  render();
+}
+
+/* ═══ Startup ══════════════════════════════════════════════════════════ */
+
+const term = $("term");
+term.addEventListener("keydown", onKey);
+term.addEventListener("focus", ()=> $("nofocus").style.display = "none");
+term.addEventListener("blur",  ()=> $("nofocus").style.display = "flex");
+$("nofocus").addEventListener("click", ()=> term.focus());
+
+flash("press :help or ? for help");
+render();
+term.focus();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "customer": "{{user_agent}}",
+  "lines": [
+    { "sku": "ABC-1", "units": 2 }
+  ]
+}

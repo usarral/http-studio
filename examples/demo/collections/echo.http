@@ -1,0 +1,34 @@
+# File variables: they apply to every request in this collection.
+# Any environment from http-client.env.json can override them.
+@accept = application/json
+
+### GET with a query
+# @name get
+# @description Checks that the query and the variables resolve.
+@page = 1
+GET {{base_url}}/get
+  ?limit=10
+  &page={{page}}
+Accept: {{accept}}
+User-Agent: {{user_agent}}
+
+### POST with a JSON body
+# @name post-json
+# @description The token comes from http-client.private.env.json, which is not committed.
+POST {{base_url}}/post
+Accept: {{accept}}
+Content-Type: application/json
+
+{
+  "user": "{{user_agent}}",
+  "token": "{{api_token}}"
+}
+
+### POST with the body in a separate file
+# @name post-file
+# @description The body comes from order.json; `<@` runs it through the interpolator.
+POST {{base_url}}/post
+Accept: {{accept}}
+Content-Type: application/json
+
+<@ ./order.json

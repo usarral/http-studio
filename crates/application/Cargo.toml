@@ -1,0 +1,21 @@
+[package]
+name = "http-studio-application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-stream = "0.3.6"
+async-trait = "0.1.92"
+futures-core = "0.3.34"
+futures-util = "0.3.34"
+http-studio-domain = { version = "0.1.0", path = "../domain" }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.20"

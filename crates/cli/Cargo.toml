@@ -1,0 +1,29 @@
+[package]
+name = "http-studio-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.6", features = ["derive", "env"] }
+clap_complete = "4.6.9"
+futures-util = "0.3.34"
+http-studio-application = { version = "0.1.0", path = "../application" }
+http-studio-domain = { version = "0.1.0", path = "../domain" }
+http-studio-infrastructure = { version = "0.1.0", path = "../infrastructure" }
+http-studio-rpc = { version = "0.1.0", path = "../rpc" }
+http-studio-tui = { version = "0.1.0", path = "../tui" }
+serde_json = "1.0.151"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "io-std"] }
+
+[[bin]]
+name = "hts"
+path = "src/main.rs"

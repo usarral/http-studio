@@ -1,0 +1,15 @@
+# Cocogitto: Conventional Commits, checked with `cog check`.
+#
+# A Rust tool is chosen over commitlint so the check also exists locally:
+# `cargo install cocogitto` and `cog check` before pushing, rather than finding
+# out when you open the pull request. This repository has no Node and should
+# not force anyone to install it in order to contribute.
+ignore_merge_commits = true
+
+# The types are the specification's: build, chore, ci, docs, feat, fix, perf,
+# refactor, revert, style, test. No custom ones are added: the value of a
+# convention is that it is everybody's.
+#
+# The scopes we use (domain, application, infrastructure, cli, tui, rpc, nvim)
+# are documented in AGENTS.md and are not restricted here, so that adding a
+# crate does not mean touching this file.

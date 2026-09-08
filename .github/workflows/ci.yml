@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Warnings are errors in CI: the architecture only holds up if the layer
+  # lints (missing_docs, unreachable_pub) are not left to pile up.
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # The messages and the branch name are checked before anything else: they
+  # take seconds, and learning that the subject is wrong after waiting for Rust
+  # to compile is how a convention ends up resented.
+  commits:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # `cog` needs the history to walk the range, and the real branch
+          # rather than the merge GitHub fabricates for the pull request.
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # The bare binary, pinned to the version the local check runs against.
+      # The official action exists, but it installs the version it decides on,
+      # and its "install only" mode does not behave as advertised: it runs its
+      # script anyway and dies asking for a command.
+      - name: Install cocogitto
+        env:
+          COG_VERSION: "7.0.0"
+        run: |
+          set -euo pipefail
+          tar="cocogitto-$COG_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          url="https://github.com/cocogitto/cocogitto/releases/download/$COG_VERSION/$tar"
+
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL "$url" -o "$tar"
+          tar --strip-components=1 -xzf "$tar" x86_64-unknown-linux-musl/cog
+          mv cog "$HOME/.local/bin/"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Conventional Commits
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        # Only this pull request's commits. The history from before the
+        # convention is not conventional, and rewriting it so that it were
+        # would cost more than it is worth.
+        run: cog check "$BASE..$HEAD"
+
+  branch-name:
+    name: Branch name
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Branch name
+        env:
+          # Through a variable and not interpolated into the script: a branch's
+          # name is chosen by whoever opens the pull request, and it need not
+          # be friendly.
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          prefixes='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|feature|bugfix|hotfix|release|renovate'
+
+          if printf '%s' "$BRANCH" | grep -qE "^($prefixes)/.+"; then
+            echo "OK: $BRANCH"
+            exit 0
+          fi
+
+          echo "The branch name '$BRANCH' does not follow the convention." >&2
+          echo >&2
+          echo "Expected <type>/<description>, with the type among:" >&2
+          echo "  $prefixes" >&2
+          echo >&2
+          echo "The canonical ones are the Conventional Commits types (feat/," >&2
+          echo "fix/…), which is what the history uses. See AGENTS.md." >&2
+          exit 1
+
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the toolchain
+        run: rustup component add rustfmt clippy
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace
+
+      - name: Documentation
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  # The rule is that every commit in the history compiles and passes the tests,
+  # not just the branch tip. Without this, a `git bisect` runs into commits that
+  # do not compile and stops being useful exactly when it is needed.
+  #
+  # It costs one test cycle per commit of the pull request. That is the price of
+  # the rule being true rather than a good intention.
+  every-commit:
+    name: Each commit on its own
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # The real branch, not the merge GitHub fabricates: what gets
+          # checked is the commits exactly as they will land in the history.
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and test each commit
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # `--no-merges`: a merge introduces no changes of its own to test,
+          # and both of its parents are already checked in their own right.
+          commits=$(git rev-list --reverse --no-merges "$BASE..$HEAD")
+          total=$(printf '%s\n' "$commits" | grep -c . || true)
+
+          if [ "$total" -eq 0 ]; then
+            echo "No commits to check."
+            exit 0
+          fi
+
+          n=0
+          for sha in $commits; do
+            n=$((n + 1))
+            echo "::group::[$n/$total] $(git log -1 --format='%h %s' "$sha")"
+            git checkout --quiet --detach "$sha"
+            cargo test --workspace
+            echo "::endgroup::"
+          done
+
+  # The Neovim plugin is tested against a real `hts serve`: it is the only way
+  # to notice that a protocol change has broken it.
+  nvim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build hts
+        run: cargo build --bin hts
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: The plugin's pure tests
+        run: nvim --headless -l tests/nvim/block_spec.lua
+
+      - name: The plugin's integration test
+        run: nvim --headless -l tests/nvim/smoke.lua target/debug/hts

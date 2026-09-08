@@ -1,0 +1,22 @@
+[package]
+name = "http-studio-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+crossterm = { version = "0.29.0", features = ["event-stream"] }
+futures-util = "0.3.34"
+http-studio-application = { version = "0.1.0", path = "../application" }
+http-studio-domain = { version = "0.1.0", path = "../domain" }
+ratatui = "0.30.2"
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["rt", "macros", "sync", "time"] }
+unicode-width = "0.2.2"

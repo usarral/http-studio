@@ -1,0 +1,166 @@
+name: Release
+
+# Publishes `hts` binaries when the workspace version changes on `main`.
+#
+# The trigger is a push to `main`, but not every push publishes: the `version`
+# job reads the version from `Cargo.toml` and only carries on when no `vX.Y.Z`
+# release exists yet. That way the normal workflow (merging PRs) makes no
+# noise, and publishing takes nothing but bumping the version in
+# `[workspace.package]` and merging.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+# Two releases at once would leave the tag half done; they queue instead of
+# cancelling, because cancelling a half-finished publish is worse than waiting.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Is there a new version?
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.data.outputs.version }}
+      publish: ${{ steps.data.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare the version against the published releases
+        id: data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # `--no-deps --offline` needs no registry index download: it only
+          # reads the workspace's manifests.
+          version=$(cargo metadata --no-deps --offline --format-version 1 \
+            | jq -r '.packages[] | select(.name == "http-studio-cli") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$version is already published; nothing to do."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$version will be published."
+          fi
+
+  # CI already runs on this very commit, but a failure there would not stop the
+  # publish: the tests are repeated here so a release is never cut with a broken
+  # workspace. It only happens on the pushes that bump the version.
+  tests:
+    name: Tests
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Tests
+        run: cargo test --workspace --locked
+
+  # For now only the native Linux target, which is the only one checked. Adding
+  # macOS, Windows or `aarch64-unknown-linux-gnu` takes nothing but entries in
+  # `include` (and, for Linux ARM, installing `gcc-aarch64-linux-gnu` and
+  # pointing the linker and `CC_*` at it, because `rusqlite` runs `bundled` and
+  # compiles SQLite with the `cc` crate).
+  build:
+    name: Build (${{ matrix.target }})
+    needs: [version, tests]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One target failing should not take the others down: it is more useful
+      # to see in one go which ones compile.
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Add the target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # No `-D warnings`: warnings are CI's business. Here a new warning from a
+      # dependency must not stop the publish.
+      - name: Build hts
+        run: cargo build --release --locked --bin hts --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="hts-v${{ needs.version.outputs.version }}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp "target/${{ matrix.target }}/release/hts" "dist/$name/"
+          cp README.md LICENSE "dist/$name/"
+          tar czf "dist/$name.tar.gz" -C dist "$name"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.target }}
+          if-no-files-found: error
+          path: dist/*.tar.gz
+
+  publish:
+    name: Publish the release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed to create the tag and the release.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: package-*
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          # Explicit and not `*`: a `sha256sum` over a glob that drags in a
+          # directory fails, and with no arguments it sits reading stdin.
+          shopt -s nullglob
+          packages=(*.tar.gz *.zip)
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "No package was downloaded" >&2
+            exit 1
+          fi
+          sha256sum -- "${packages[@]}" > SHA256SUMS
+          cat SHA256SUMS
+
+      # `gh release create` creates the tag pointing at this commit; there is
+      # no need to push it by hand.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "v${{ needs.version.outputs.version }}" \
+            --target "$GITHUB_SHA" \
+            --title "v${{ needs.version.outputs.version }}" \
+            --generate-notes \
+            dist/*

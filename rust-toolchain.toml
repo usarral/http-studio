@@ -1,0 +1,4 @@
+# The toolchain is pinned so CI and development machines compile alike.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

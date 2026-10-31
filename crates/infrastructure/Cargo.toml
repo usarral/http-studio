@@ -20,7 +20,7 @@ futures-core = "0.3.34"
 http-studio-application = { version = "0.1.0", path = "../application" }
 http-studio-domain = { version = "0.1.0", path = "../domain" }
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "http2", "stream", "charset", "gzip", "brotli"] }
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.0", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.20"
@@ -28,6 +28,6 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "fs", "ti
 url = "2.5.8"
 
 [dev-dependencies]
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+rusqlite = { version = "0.41.0", features = ["bundled"] }
 tempfile = "3.24.0"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

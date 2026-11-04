@@ -69,6 +69,8 @@ $ hts history --show 42                    # one execution in full, body include
 $ hts index                                # what the history is taking up
 $ hts index prune --keep 500               # keep only the last 500
 $ hts info                                 # which workspace and paths are in use
+$ hts import curl 'curl https://…'         # a pasted command becomes a request
+$ hts import openapi ./openapi.yaml        # a description becomes a workspace
 $ hts serve                                # JSON-RPC server over stdio
 ```
 
@@ -148,6 +150,29 @@ There is an example workspace ready to try:
 $ hts -w examples/demo ls
 $ hts -w examples/demo run echo/get --env dev --var page=2
 ```
+
+### Starting from something that already exists
+
+Nobody starts an API client from an empty file. A command pasted out of
+documentation, or the description the API already publishes, is the way in:
+
+```console
+$ hts import curl 'curl https://api.example.com/pets -H "accept: application/json"'
+$ pbpaste | hts import curl @- --to petstore        # a browser's Copy as cURL
+$ hts import openapi ./openapi.yaml                 # or a URL
+$ hts import openapi https://api.example.com/openapi.json --tag pets --dry-run
+```
+
+One operation becomes one request, each OpenAPI tag becomes a collection, and
+the server becomes a `base_url` collection variable — so an environment can
+point the whole import at staging without editing a request. Bodies are built
+from the schema, and authentication arrives as a `{{token}}` placeholder with
+nothing declared for it: the value belongs in
+`http-client.private.env.json`, not in the file you commit.
+
+Importing twice keeps what is already there and says so; `--replace` overwrites,
+`--dry-run` prints the `.http` without writing it. The details, flag by flag,
+are in [`docs/importing.md`](docs/importing.md).
 
 ### Certificates that don't validate
 
@@ -247,7 +272,7 @@ rpc ──┘    (use cases)        (pure)        (reqwest, .http, SQLite)
 |---|---|
 | `crates/domain` | Entities, variable interpolation, resolution. No I/O, no `async`. |
 | `crates/application` | Ports (traits), use cases and the `Engine` facade. |
-| `crates/infrastructure` | Adapters: `reqwest`, the `.http` parser, SQLite, secrets. |
+| `crates/infrastructure` | Adapters: `reqwest`, the `.http` parser and writer, importers, SQLite, secrets. |
 | `crates/rpc` | JSON-RPC 2.0 server over stdio. |
 | `crates/tui` | Terminal interface with ratatui and vim motions. |
 | `crates/cli` | The `hts` binary and the composition root. |
@@ -379,8 +404,8 @@ Everything pending lives in one place: [`docs/roadmap.md`](docs/roadmap.md),
 which also explains the decisions still open and why.
 
 Delivered: the engine and the CLI, the `.http` format, the history, `hts serve`,
-the TUI, the Neovim plugin, and the twelve features the http-files.org registry
-marks as universal.
+the TUI, the Neovim plugin, importing from cURL and from OpenAPI, and the twelve
+features the http-files.org registry marks as universal.
 
 Next, in order: per-workspace configuration and entering the http-files.org
 registry.

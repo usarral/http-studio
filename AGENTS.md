@@ -21,7 +21,8 @@ Background reading, in order of usefulness: [`docs/architecture.md`](docs/archit
 (layers and the decision table), [`docs/roadmap.md`](docs/roadmap.md) (everything
 pending and every open decision), [`docs/workspace-format.md`](docs/workspace-format.md)
 (what the parser accepts and why), [`docs/engine-protocol.md`](docs/engine-protocol.md)
-(JSON-RPC surface).
+(JSON-RPC surface), [`docs/importing.md`](docs/importing.md) (what the importers
+promise, and what they refuse to guess).
 
 ## Conventions that are not negotiable
 

@@ -21,6 +21,7 @@ mod adhoc;
 mod cli;
 mod composition;
 mod extract;
+mod import;
 mod info;
 mod render;
 
@@ -109,38 +110,17 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         }
         Command::Index { action } => {
             let engine = build_index_engine(cli.workspace)?;
-            let mut stdout = std::io::stdout().lock();
-
-            match action.unwrap_or(IndexAction::Stats) {
-                IndexAction::Stats => {
-                    let stats = engine.index_stats().await?;
-                    let size = SqliteHistory::default_path()
-                        .map(|path| info::FileState::of(path).size.unwrap_or_default());
-                    renderer.index_stats(&stats, size, &mut stdout)?;
-                }
-                IndexAction::Prune { older_than, keep } => {
-                    let scope = match (older_than, keep) {
-                        (Some(days), _) => PruneScope::OlderThan { days },
-                        (None, Some(entries)) => PruneScope::KeepLast { entries },
-                        (None, None) => {
-                            anyhow::bail!("say what to keep: `--older-than DAYS` or `--keep N`")
-                        }
-                    };
-                    let deleted = engine.prune_index(scope).await?;
-                    renderer.pruned(deleted, &mut stdout)?;
-                }
-                IndexAction::Clear => {
-                    let deleted = engine.prune_index(PruneScope::All).await?;
-                    renderer.pruned(deleted, &mut stdout)?;
-                }
-            }
-
-            Ok(ExitCode::SUCCESS)
+            index(&engine, &renderer, action.unwrap_or(IndexAction::Stats)).await
         }
         Command::Info => {
             let info = info::Info::gather(cli.workspace).await?;
             let mut stdout = std::io::stdout().lock();
             renderer.info(&info, &mut stdout)?;
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Import { format } => {
+            let mut stdout = std::io::stdout().lock();
+            import::run(cli.workspace, format, &renderer, &mut stdout).await?;
             Ok(ExitCode::SUCCESS)
         }
         Command::Tui => {
@@ -161,6 +141,37 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
     }
+}
+
+/// Inspects or cleans the execution index.
+async fn index(engine: &Engine, renderer: &Renderer, action: IndexAction) -> Result<ExitCode> {
+    let mut stdout = std::io::stdout().lock();
+
+    match action {
+        IndexAction::Stats => {
+            let stats = engine.index_stats().await?;
+            let size = SqliteHistory::default_path()
+                .map(|path| info::FileState::of(path).size.unwrap_or_default());
+            renderer.index_stats(&stats, size, &mut stdout)?;
+        }
+        IndexAction::Prune { older_than, keep } => {
+            let scope = match (older_than, keep) {
+                (Some(days), _) => PruneScope::OlderThan { days },
+                (None, Some(entries)) => PruneScope::KeepLast { entries },
+                (None, None) => {
+                    anyhow::bail!("say what to keep: `--older-than DAYS` or `--keep N`")
+                }
+            };
+            let deleted = engine.prune_index(scope).await?;
+            renderer.pruned(deleted, &mut stdout)?;
+        }
+        IndexAction::Clear => {
+            let deleted = engine.prune_index(PruneScope::All).await?;
+            renderer.pruned(deleted, &mut stdout)?;
+        }
+    }
+
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Picks the engine and the identifier depending on whether the target is a

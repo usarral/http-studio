@@ -36,6 +36,20 @@ pub enum ApplicationError {
         message: String,
     },
 
+    /// A document could not be read as the format it was taken for.
+    ///
+    /// Separate from [`ApplicationError::Repository`] because the file was read
+    /// perfectly well: what failed is that its contents are not that format,
+    /// and saying so without naming the format sends the reader looking at
+    /// their disk.
+    #[error("not a valid {format} document: {message}")]
+    Import {
+        /// The format it was being read as (`curl`, `OpenAPI`…).
+        format: String,
+        /// The failure's detail, already formatted by the importer.
+        message: String,
+    },
+
     /// The transport could not complete the request (DNS, TLS, timeout…).
     #[error("transport error: {message}")]
     Transport {
@@ -48,6 +62,14 @@ impl ApplicationError {
     /// Shorthand for adapters building a repository error.
     pub fn repository(message: impl std::fmt::Display) -> Self {
         Self::Repository {
+            message: message.to_string(),
+        }
+    }
+
+    /// Shorthand for importers building a format error.
+    pub fn import(format: impl Into<String>, message: impl std::fmt::Display) -> Self {
+        Self::Import {
+            format: format.into(),
             message: message.to_string(),
         }
     }

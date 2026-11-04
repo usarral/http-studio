@@ -12,9 +12,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use http_studio_application::{
-    ApplicationError, CollectionRepository, DynamicSource, Engine, EnginePorts,
-    EnvironmentRepository, ExchangeRecorder, ExecutionStream, HistoryMaintenance, HistoryQuery,
-    HistoryReader, HttpTransport, LocatedRequest, PruneScope, RequestSource, SecretProvider,
+    ApplicationError, CollectionRepository, CollectionWriter, DocumentLoader, DynamicSource,
+    Engine, EnginePorts, EnvironmentRepository, ExchangeRecorder, ExecutionStream,
+    HistoryMaintenance, HistoryQuery, HistoryReader, HttpTransport, ImportPolicy, ImportReport,
+    LocatedRequest, PruneScope, RequestSource, SecretProvider,
 };
 use http_studio_domain::{
     Body, Collection, DynamicSeed, Environment, Exchange, ExecutionEvent, Header, HistoryDetail,
@@ -235,6 +236,37 @@ impl RequestSource for FakeSource {
     }
 }
 
+/// The ports the JSON-RPC surface does not use.
+///
+/// Importing has no method in the protocol, so both ports fail loudly rather
+/// than returning an empty success: if a future `import/*` method forgets to
+/// wire them, a test will say so instead of passing.
+struct Unused;
+
+#[async_trait]
+impl CollectionWriter for Unused {
+    async fn write(
+        &self,
+        _collection: &Collection,
+        _policy: ImportPolicy,
+    ) -> Result<ImportReport, ApplicationError> {
+        Err(ApplicationError::repository("this engine cannot write"))
+    }
+
+    fn render(&self, _collection: &Collection) -> String {
+        String::new()
+    }
+}
+
+#[async_trait]
+impl DocumentLoader for Unused {
+    async fn load(&self, _path: &str) -> Result<String, ApplicationError> {
+        Err(ApplicationError::repository(
+            "this engine cannot read documents",
+        ))
+    }
+}
+
 /// Assembles the engine out of every double.
 fn fake_engine(delay: Duration) -> Engine {
     let workspace = Arc::new(FakeWorkspace);
@@ -250,6 +282,8 @@ fn fake_engine(delay: Duration) -> Engine {
         history: Arc::new(FakeHistory),
         maintenance: Arc::new(FakeHistory),
         source: Arc::new(FakeSource),
+        writer: Arc::new(Unused),
+        documents: Arc::new(Unused),
     })
 }
 

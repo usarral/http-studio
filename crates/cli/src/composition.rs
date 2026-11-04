@@ -11,13 +11,13 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use http_studio_application::{
-    CollectionRepository, Engine, EnginePorts, EnvironmentRepository, ExchangeRecorder,
-    HistoryMaintenance, HistoryReader, RequestSource,
+    CollectionImporter, CollectionRepository, CollectionWriter, Engine, EnginePorts,
+    EnvironmentRepository, ExchangeRecorder, HistoryMaintenance, HistoryReader, RequestSource,
 };
 use http_studio_domain::RequestDefinition;
 use http_studio_infrastructure::{
-    EnvSecretProvider, FileSystemWorkspace, InlineWorkspace, NullHistory, ReqwestTransport,
-    SqliteHistory, SystemDynamicSource,
+    CurlImporter, EnvSecretProvider, FileSystemWorkspace, InlineWorkspace, LocalDocuments,
+    NullHistory, OpenApiImporter, ReqwestTransport, SqliteHistory, SystemDynamicSource,
 };
 
 /// The total timeout per request.
@@ -42,6 +42,7 @@ pub(crate) fn build_engine(workspace: Option<PathBuf>, history_enabled: bool) ->
 
     let filesystem = Arc::new(FileSystemWorkspace::new(root));
     assemble(
+        filesystem.clone(),
         filesystem.clone(),
         filesystem.clone(),
         filesystem,
@@ -72,7 +73,13 @@ pub(crate) fn build_inline_engine(
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let filesystem = Arc::new(FileSystemWorkspace::new(root));
 
-    assemble(inline.clone(), filesystem, inline, history_enabled)
+    assemble(
+        inline.clone(),
+        filesystem.clone(),
+        inline,
+        filesystem,
+        history_enabled,
+    )
 }
 
 /// Builds the engine without demanding a workspace.
@@ -91,7 +98,53 @@ pub(crate) fn build_index_engine(workspace: Option<PathBuf>) -> Result<Engine> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     let filesystem = Arc::new(FileSystemWorkspace::new(root));
-    assemble(filesystem.clone(), filesystem.clone(), filesystem, true)
+    assemble(
+        filesystem.clone(),
+        filesystem.clone(),
+        filesystem.clone(),
+        filesystem,
+        true,
+    )
+}
+
+/// Builds the engine for an import.
+///
+/// `writing` is what decides whether a workspace is required: a dry run only
+/// converts, and demanding a `collections/` directory in order to show what a
+/// command looks like would be borrowing a requirement from the operation next
+/// door.
+///
+/// # Errors
+///
+/// If `writing` and no workspace is found, or the HTTP client cannot be built.
+pub(crate) fn build_import_engine(workspace: Option<PathBuf>, writing: bool) -> Result<Engine> {
+    if writing {
+        return build_engine(workspace, false);
+    }
+
+    let root = resolve_root(workspace)?
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let filesystem = Arc::new(FileSystemWorkspace::new(root));
+
+    assemble(
+        filesystem.clone(),
+        filesystem.clone(),
+        filesystem.clone(),
+        filesystem,
+        false,
+    )
+}
+
+/// The importer that reads a cURL command.
+#[must_use]
+pub(crate) fn curl_importer(name: Option<String>) -> Arc<dyn CollectionImporter> {
+    Arc::new(CurlImporter::new().with_name(name))
+}
+
+/// The importer that reads an OpenAPI description.
+#[must_use]
+pub(crate) fn openapi_importer(tags: Vec<String>) -> Arc<dyn CollectionImporter> {
+    Arc::new(OpenApiImporter::new().with_tags(tags))
 }
 
 /// Locates the workspace root, or `None` when there is none.
@@ -109,6 +162,7 @@ fn assemble(
     collections: Arc<dyn CollectionRepository>,
     environments: Arc<dyn EnvironmentRepository>,
     source: Arc<dyn RequestSource>,
+    writer: Arc<dyn CollectionWriter>,
     history_enabled: bool,
 ) -> Result<Engine> {
     let transport = Arc::new(
@@ -126,6 +180,11 @@ fn assemble(
         history,
         maintenance,
         source,
+        writer,
+        // Documents to import come from outside the workspace, so the loader
+        // is not the workspace adapter: it reads whatever path the person
+        // typed, which is the one thing the workspace deliberately refuses.
+        documents: Arc::new(LocalDocuments::new()),
     }))
 }
 

@@ -15,6 +15,7 @@ engine — not the file format, not the UI — is the product.
 | **F2.1** | Ad-hoc requests by URL, bodies from file and stdin, machine output modes, `--extract`, shell completions. |
 | **F3** | Neovim plugin over `hts serve`, with pure tests plus an integration test against a real server, both in CI. |
 | **F3.1** | TLS opt-out: `# @insecure` per request, `--insecure`/`-k` per invocation, and an error message that names the way out. |
+| **F4.1** | Importing ([`importing.md`](importing.md)): `hts import curl` for a pasted command and `hts import openapi` for a description — 3.x or Swagger 2.0, JSON or YAML, path or URL. One use case with the format injected as a `CollectionImporter` port, a `.http` writer that is the parser's inverse, and a merge that keeps what is already in the file. |
 
 As of F1.5 the engine covers **all twelve features** the http-files.org registry
 marks `universal: true` — the set its core v1 profile will be derived from.
@@ -62,9 +63,10 @@ list of what "compatible with `.http`" means beyond the core. Grouped by cost.
   clients support. Small, and squarely inside the engine.
 - Save the response to a file: `>> ./out.json`, and `>>!` to overwrite. The
   parser already recognises the `>` block; it just discards it.
-- Multipart form bodies with an explicit boundary.
-- Import and export cURL commands. `hts` already knows the resolved request,
-  which is most of the work for export.
+- Multipart form bodies with an explicit boundary. It is also the one thing
+  `hts import curl` refuses outright, so it would close two gaps at once.
+- **Export** a cURL command. Importing one is done; `hts` already knows the
+  resolved request, which is most of the work for the other direction.
 
 **Medium:**
 
@@ -73,7 +75,9 @@ list of what "compatible with `.http`" means beyond the core. Grouped by cost.
 - Response assertions (`?? status == 200`) for CI. *(was F4)*
 - Chaining: extracting values from a response into session variables. *(was F4)*
   Related to assertions — both need somewhere to keep per-run state.
-- Postman and Insomnia collection import. *(was F4)*
+- Postman and Insomnia collection import. *(was F4)* Now a `CollectionImporter`
+  implementation and a line in the composition root: the fetching, merging,
+  conflict policy and reporting are already written and already tested.
 
 **Large, and each deserves its own decision:**
 

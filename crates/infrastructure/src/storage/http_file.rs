@@ -730,7 +730,7 @@ fn request_name(
 ///
 /// It is normalised so the identifier can be typed into a CLI without quotes or
 /// escapes, even when the title carries accents or punctuation.
-fn slug(name: &str) -> String {
+pub(crate) fn slug(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut previous_dash = false;
 

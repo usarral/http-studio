@@ -6,6 +6,7 @@
 
 use std::io::{IsTerminal, Write};
 
+use http_studio_application::{ImportOutcome, ImportOutput};
 use http_studio_domain::{
     Collection, Environment, ExecutionEvent, HistoryDetail, HistoryEntry, HistoryStats,
     ResolvedRequest, ResponseHead,
@@ -672,4 +673,105 @@ fn write_body(head: &ResponseHead, body: &str, out: &mut impl Write) -> std::io:
     }
 
     writeln!(out, "{body}")
+}
+
+impl Renderer {
+    /// Reports what an import did, or what a dry run would do.
+    ///
+    /// The destination is named on every line: "nothing happened" and "it went
+    /// somewhere you were not looking" are an import's two failure modes, and
+    /// only the second one is silent.
+    ///
+    /// # Errors
+    ///
+    /// If writing to standard output fails.
+    pub(crate) fn imported(
+        &self,
+        output: &ImportOutput,
+        out: &mut impl Write,
+    ) -> std::io::Result<()> {
+        if self.wants_json() {
+            return writeln!(out, "{}", imported_json(output));
+        }
+
+        let p = self.palette;
+
+        // A dry run shows the text itself: a summary of what it would have
+        // written is exactly the part nobody needs to check.
+        if output.reports.is_empty() {
+            for (collection, preview) in output.collections.iter().zip(&output.previews) {
+                writeln!(out, "{}{}.http{}", p.bold, collection.name, p.reset)?;
+                writeln!(out, "{preview}")?;
+            }
+            return Ok(());
+        }
+
+        for report in &output.reports {
+            writeln!(
+                out,
+                "{}{}{} {}→ {}{}",
+                p.bold, report.collection, p.reset, p.dim, report.location, p.reset
+            )?;
+
+            for request in &report.requests {
+                let (mark, colour) = match request.outcome {
+                    ImportOutcome::Created => ("new", p.green),
+                    ImportOutcome::Replaced => ("replaced", p.yellow),
+                    ImportOutcome::Skipped => ("kept", p.dim),
+                };
+                writeln!(
+                    out,
+                    "  {colour}{mark:<8}{} {}",
+                    p.reset,
+                    request.id.as_str()
+                )?;
+            }
+        }
+
+        let skipped: usize = output
+            .reports
+            .iter()
+            .map(|report| report.count(ImportOutcome::Skipped))
+            .sum();
+        if skipped > 0 {
+            // Without this line a skip looks like a failure, and the flag that
+            // changes it is not guessable.
+            writeln!(
+                out,
+                "{}{skipped} already there and kept; pass --replace to overwrite{}",
+                p.dim, p.reset
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+/// An import's result as one JSON object.
+fn imported_json(output: &ImportOutput) -> String {
+    let reports: Vec<serde_json::Value> = output
+        .reports
+        .iter()
+        .map(|report| {
+            serde_json::json!({
+                "collection": report.collection,
+                "location": report.location,
+                "requests": report.requests.iter().map(|request| serde_json::json!({
+                    "id": request.id.as_str(),
+                    "outcome": match request.outcome {
+                        ImportOutcome::Created => "created",
+                        ImportOutcome::Replaced => "replaced",
+                        ImportOutcome::Skipped => "skipped",
+                    },
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "collections": output.collections,
+        "reports": reports,
+        "previews": output.previews,
+    })
+    .to_string()
 }

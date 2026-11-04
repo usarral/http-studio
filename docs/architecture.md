@@ -50,8 +50,9 @@ guaranteed by the type system: there is no way to send something unresolved.
 ### `crates/application`
 
 Ports and use cases. The ports (`CollectionRepository`, `HttpTransport`,
-`ExchangeRecorder`, `SecretProvider`, `EnvironmentRepository`, `DynamicSource`)
-describe capabilities in the language of the domain, not in technologies.
+`ExchangeRecorder`, `SecretProvider`, `EnvironmentRepository`, `DynamicSource`,
+`CollectionImporter`, `CollectionWriter`, `DocumentLoader`) describe capabilities
+in the language of the domain, not in technologies.
 
 The key detail: **a use case returns a stream of `ExecutionEvent`**, not a
 blocking `Result`.
@@ -73,8 +74,9 @@ makes adding an interface presentation work rather than engine work.
 ### `crates/infrastructure`
 
 The adapters: `ReqwestTransport`, `FileSystemWorkspace`, `SqliteHistory`,
-`NullHistory`, `EnvSecretProvider`, `SystemDynamicSource`. None of their
-dependencies show up in `application`'s signatures.
+`NullHistory`, `EnvSecretProvider`, `SystemDynamicSource`, `LocalDocuments`,
+`CurlImporter`, `OpenApiImporter`. None of their dependencies show up in
+`application`'s signatures.
 
 The `.http` parser (`storage::http_file`) turns text into domain entities, with
 the conversion explicit and confined to one module. That isolation was tested
@@ -82,6 +84,16 @@ for real: **migrating the workspace from a homegrown YAML to standard `.http`
 files did not touch a single line of `domain` or `application`.** One
 infrastructure module changed, and the example files. It is exactly what the
 dependency rule promises, measured against a real change rather than a diagram.
+
+Its mirror image (`storage::http_writer`) turns entities back into text, and is
+what importing is built on. The round trip is the contract: everything written
+is parsed again before it reaches the disk, so no import can leave a workspace
+the engine refuses to load.
+
+The importers ([`importing.md`](importing.md)) are pure — text in, collections
+out, no disk and no network — because where a document came from is the use
+case's business. That is what lets one importer serve a path, a URL and a string
+pasted on a command line.
 
 ### `crates/rpc`
 
@@ -138,6 +150,9 @@ equivalent module built from the same pieces.
 | The clock and randomness behind `{{$timestamp}}` arrive through a port (`DynamicSource`) | The domain defines what each dynamic variable means without reading the clock, and a test can fix the seed and assert the exact value instead of "something close to now" | One more port to wire in every composition root |
 | A dynamic variable has one value for the whole execution | The real case is a correlation id repeated in a header and the body; two different values there would be a bug | Two `{{$randomInt}}` in a row give the same number |
 | The engine's ports are passed as `EnginePorts`, not as loose parameters | Eight positional `Arc<dyn …>` compile just as well swapped, and fail at runtime | One more type to name in every composition root |
+| Importing is one use case with the format injected as a port | A cURL command and an OpenAPI description differ only in how a document is read; fetching, merging, conflict policy and reporting are written once. The next format is one trait implementation | Adding a format means touching the composition root, which is the only place allowed to name it |
+| A remote document is fetched through `HttpTransport`, not through an HTTP client of its own | `--insecure` and the timeout already live there, and a description served by an internal host with its own CA is exactly when an import is needed | The import use case depends on the transport port as well as the writer |
+| An import merges into the destination and skips what is there | A `.http` holds requests nobody imported, and re-importing is how a description gets followed as it grows | Two flags (`--replace`, `--dry-run`) rather than one obvious behaviour |
 | `spawn_blocking` for files and SQLite | `std::fs` and `rusqlite` are synchronous; pretending to be async would be a lie | One thread hop per operation |
 
 ## How a UI gets added

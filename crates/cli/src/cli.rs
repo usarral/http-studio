@@ -96,6 +96,13 @@ pub(crate) enum ImportFormat {
     /// from a file with `@path`, or from standard input with `@-`, which is
     /// what makes a browser's multi-line *Copy as cURL* easy to pipe in.
     Curl(ImportCurlArgs),
+    /// Imports an OpenAPI or Swagger description.
+    ///
+    /// The argument is a path or an `http(s)` URL. One operation becomes one
+    /// request and each tag becomes a collection, which is the grouping the
+    /// document already chose.
+    #[command(name = "openapi", alias = "swagger")]
+    OpenApi(ImportOpenApiArgs),
 }
 
 /// The arguments of `hts import curl`.
@@ -108,6 +115,28 @@ pub(crate) struct ImportCurlArgs {
     /// The request's name. By default it is derived from method and path.
     #[arg(long, value_name = "NAME")]
     pub(crate) name: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) common: ImportArgs,
+}
+
+/// The arguments of `hts import openapi`.
+#[derive(Debug, clap::Args)]
+pub(crate) struct ImportOpenApiArgs {
+    /// The description: a path, or an `http(s)` URL to fetch it from.
+    #[arg(value_name = "PATH|URL")]
+    pub(crate) location: String,
+
+    /// Import only the operations carrying this tag. Repeatable.
+    #[arg(long = "tag", value_name = "TAG")]
+    pub(crate) tags: Vec<String>,
+
+    /// Do not verify the TLS certificate while fetching the description.
+    ///
+    /// It only applies to the download: what the imported requests do about
+    /// TLS is written in the requests themselves.
+    #[arg(long = "insecure", short = 'k')]
+    pub(crate) insecure: bool,
 
     #[command(flatten)]
     pub(crate) common: ImportArgs,

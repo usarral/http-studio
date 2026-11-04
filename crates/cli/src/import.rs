@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use http_studio_application::{ImportInput, ImportSource};
 
 use crate::cli::ImportFormat;
-use crate::composition::{build_import_engine, curl_importer};
+use crate::composition::{build_import_engine, curl_importer, openapi_importer};
 use crate::render::Renderer;
 
 /// Runs the import the arguments describe.
@@ -27,6 +27,7 @@ pub(crate) async fn run(
     renderer: &Renderer,
     out: &mut impl Write,
 ) -> Result<()> {
+    let mut insecure = false;
     let (importer, common, source) = match format {
         ImportFormat::Curl(args) => {
             // A cURL command is the document: there is nothing to fetch, which
@@ -38,6 +39,16 @@ pub(crate) async fn run(
                 ImportSource::Text(document),
             )
         }
+        ImportFormat::OpenApi(args) => {
+            insecure = args.insecure;
+            (
+                openapi_importer(args.tags),
+                args.common,
+                // A path or a URL: telling them apart is the engine's job, so
+                // every interface does it the same way.
+                ImportSource::Location(args.location),
+            )
+        }
     };
 
     // A dry run writes nothing, so it has no business demanding a workspace:
@@ -47,7 +58,8 @@ pub(crate) async fn run(
     let input = ImportInput::new(source)
         .with_into(common.to.clone())
         .with_policy(common.policy())
-        .with_dry_run(common.dry_run);
+        .with_dry_run(common.dry_run)
+        .with_insecure_tls(insecure);
 
     let output = engine.import_collections(importer).execute(input).await?;
     renderer.imported(&output, out)?;

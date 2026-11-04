@@ -17,7 +17,7 @@ use http_studio_application::{
 use http_studio_domain::RequestDefinition;
 use http_studio_infrastructure::{
     CurlImporter, EnvSecretProvider, FileSystemWorkspace, InlineWorkspace, LocalDocuments,
-    NullHistory, ReqwestTransport, SqliteHistory, SystemDynamicSource,
+    NullHistory, OpenApiImporter, ReqwestTransport, SqliteHistory, SystemDynamicSource,
 };
 
 /// The total timeout per request.
@@ -139,6 +139,12 @@ pub(crate) fn build_import_engine(workspace: Option<PathBuf>, writing: bool) -> 
 #[must_use]
 pub(crate) fn curl_importer(name: Option<String>) -> Arc<dyn CollectionImporter> {
     Arc::new(CurlImporter::new().with_name(name))
+}
+
+/// The importer that reads an OpenAPI description.
+#[must_use]
+pub(crate) fn openapi_importer(tags: Vec<String>) -> Arc<dyn CollectionImporter> {
+    Arc::new(OpenApiImporter::new().with_tags(tags))
 }
 
 /// Locates the workspace root, or `None` when there is none.

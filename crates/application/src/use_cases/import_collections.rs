@@ -46,6 +46,17 @@ pub enum ImportSource {
     Location(String),
 }
 
+impl ImportSource {
+    /// Where the document was read from, when it came from somewhere.
+    #[must_use]
+    pub fn origin(&self) -> Option<&str> {
+        match self {
+            Self::Text(_) => None,
+            Self::Location(location) => Some(location),
+        }
+    }
+}
+
 /// The use case's input.
 #[derive(Debug, Clone)]
 pub struct ImportInput {
@@ -160,7 +171,7 @@ impl ImportCollections {
     ///   was taken for.
     pub async fn execute(&self, input: ImportInput) -> Result<ImportOutput, ApplicationError> {
         let document = self.read(&input).await?;
-        let mut collections = self.importer.import(&document)?;
+        let mut collections = self.importer.import(&document, input.source.origin())?;
 
         if collections.is_empty() {
             return Err(ApplicationError::Import {
@@ -303,7 +314,11 @@ mod tests {
     struct FakeImporter(Vec<Collection>);
 
     impl CollectionImporter for FakeImporter {
-        fn import(&self, document: &str) -> Result<Vec<Collection>, ApplicationError> {
+        fn import(
+            &self,
+            document: &str,
+            _origin: Option<&str>,
+        ) -> Result<Vec<Collection>, ApplicationError> {
             if document.is_empty() {
                 return Err(ApplicationError::import("fake", "the document is empty"));
             }

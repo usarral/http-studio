@@ -75,7 +75,13 @@ impl CurlImporter {
 }
 
 impl CollectionImporter for CurlImporter {
-    fn import(&self, document: &str) -> Result<Vec<Collection>, ApplicationError> {
+    /// `origin` says nothing here: a command carries its own URL, so where it
+    /// was read from has no bearing on what it calls.
+    fn import(
+        &self,
+        document: &str,
+        _origin: Option<&str>,
+    ) -> Result<Vec<Collection>, ApplicationError> {
         let command =
             parse(document).map_err(|message| ApplicationError::import(FORMAT, message))?;
 
@@ -855,7 +861,7 @@ mod tests {
     /// Imports a command and returns the single request it produced.
     fn request(command: &str) -> RequestDefinition {
         let collections = CurlImporter::new()
-            .import(command)
+            .import(command, None)
             .unwrap_or_else(|error| panic!("`{command}` did not import: {error}"));
 
         assert_eq!(collections.len(), 1);
@@ -864,7 +870,7 @@ mod tests {
 
     /// The error message a command fails with.
     fn failure(command: &str) -> String {
-        CurlImporter::new().import(command).err().map_or_else(
+        CurlImporter::new().import(command, None).err().map_or_else(
             || panic!("`{command}` was expected to fail"),
             |error| error.to_string(),
         )
@@ -1133,7 +1139,7 @@ mod tests {
     fn a_given_name_wins() {
         let collections = CurlImporter::new()
             .with_name(Some("sign in".to_owned()))
-            .import("curl https://api.example.com/login")
+            .import("curl https://api.example.com/login", None)
             .unwrap();
 
         assert_eq!(collections[0].requests[0].name, "sign in");
@@ -1144,7 +1150,7 @@ mod tests {
     fn the_collection_can_be_chosen() {
         let collections = CurlImporter::new()
             .with_collection("petstore")
-            .import("curl https://api.example.com/pets")
+            .import("curl https://api.example.com/pets", None)
             .unwrap();
 
         assert_eq!(collections[0].name, "petstore");

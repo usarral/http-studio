@@ -284,11 +284,22 @@ pub trait CollectionImporter: Send + Sync {
     /// *suggests* — an OpenAPI tag, the name of the operation's group — which
     /// the caller is free to override.
     ///
+    /// `origin` is where the document was read from, when it was read from
+    /// somewhere: a path or a URL. It is part of the document's meaning rather
+    /// than a detail — OpenAPI says a relative server URL is relative to the
+    /// description's own location, and the real Swagger Petstore declares
+    /// exactly that. Without the origin, the only honest import of it is one
+    /// that cannot be run.
+    ///
     /// # Errors
     ///
     /// [`ApplicationError::Import`] when the document is not the format it was
     /// taken for, or holds something that cannot be expressed as a request.
-    fn import(&self, document: &str) -> Result<Vec<Collection>, ApplicationError>;
+    fn import(
+        &self,
+        document: &str,
+        origin: Option<&str>,
+    ) -> Result<Vec<Collection>, ApplicationError>;
 }
 
 /// What an import does when the destination already holds that request.

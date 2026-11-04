@@ -104,9 +104,13 @@ impl OpenApiImporter {
 }
 
 impl CollectionImporter for OpenApiImporter {
-    fn import(&self, document: &str) -> Result<Vec<Collection>, ApplicationError> {
+    fn import(
+        &self,
+        document: &str,
+        origin: Option<&str>,
+    ) -> Result<Vec<Collection>, ApplicationError> {
         let value = parse(document)?;
-        let document = Document::read(&value)?;
+        let document = Document::read(&value, origin)?;
 
         let paths = value
             .get("paths")
@@ -197,7 +201,7 @@ struct Document<'a> {
 
 impl<'a> Document<'a> {
     /// Reads the document's header: version, server, title, security.
-    fn read(root: &'a Value) -> Result<Self, ApplicationError> {
+    fn read(root: &'a Value, origin: Option<&str>) -> Result<Self, ApplicationError> {
         let swagger = root.get("swagger").and_then(Value::as_str);
         let openapi = root.get("openapi").and_then(Value::as_str);
 
@@ -207,11 +211,12 @@ impl<'a> Document<'a> {
             ));
         }
 
-        let base_url = if swagger.is_some() {
+        let declared = if swagger.is_some() {
             swagger_base_url(root)
         } else {
             openapi_base_url(root)
         };
+        let base_url = absolute(&declared, origin);
 
         let fallback = root
             .get("info")
@@ -708,6 +713,39 @@ fn merge_parameters<'a>(shared: &[&'a Value], own: &[&'a Value]) -> Vec<&'a Valu
 
     merged.extend(own.iter().copied());
     merged
+}
+
+/// Resolves the declared server against where the document came from.
+///
+/// OpenAPI allows a relative server URL and defines it as relative to the
+/// description's own location — and the real Swagger Petstore uses that, with
+/// `url: /api/v3`. Taken literally it imports to a `base_url` no transport can
+/// use; joined with the URL the document was downloaded from, it is the
+/// address it was always meant to be.
+///
+/// When the document came from a file there is no origin to join to, and the
+/// declaration is left exactly as written: inventing a host would be worse
+/// than a `base_url` that is visibly incomplete.
+fn absolute(declared: &str, origin: Option<&str>) -> String {
+    if declared.starts_with("http://") || declared.starts_with("https://") {
+        return declared.to_owned();
+    }
+
+    let Some(base) = origin
+        .filter(|origin| origin.starts_with("http://") || origin.starts_with("https://"))
+        .and_then(|origin| url::Url::parse(origin).ok())
+    else {
+        return declared.to_owned();
+    };
+
+    // An empty declaration means the description named no server at all, and
+    // the host it was served from is the best answer available.
+    let path = if declared.is_empty() { "/" } else { declared };
+
+    base.join(path).map_or_else(
+        |_| declared.to_owned(),
+        |joined| joined.as_str().trim_end_matches('/').to_owned(),
+    )
 }
 
 /// The server URL of an OpenAPI 3.x description.

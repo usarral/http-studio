@@ -83,7 +83,14 @@ components:
 /// Imports a document and returns its collections.
 fn import(document: &str) -> Vec<Collection> {
     OpenApiImporter::new()
-        .import(document)
+        .import(document, None)
+        .unwrap_or_else(|error| panic!("the description did not import: {error}"))
+}
+
+/// Imports a document as if it had been downloaded from `origin`.
+fn import_from(document: &str, origin: &str) -> Vec<Collection> {
+    OpenApiImporter::new()
+        .import(document, Some(origin))
         .unwrap_or_else(|error| panic!("the description did not import: {error}"))
 }
 
@@ -285,7 +292,7 @@ paths:
 
     let collections = OpenApiImporter::new()
         .with_tags(vec!["store".to_owned()])
-        .import(document)
+        .import(document, None)
         .unwrap();
 
     assert_eq!(collections.len(), 1);
@@ -296,7 +303,7 @@ paths:
 fn a_tag_filter_that_matches_nothing_says_so() {
     let error = OpenApiImporter::new()
         .with_tags(vec!["nowhere".to_owned()])
-        .import(PETSTORE)
+        .import(PETSTORE, None)
         .unwrap_err();
 
     assert!(error.to_string().contains("nowhere"), "{error}");
@@ -489,9 +496,68 @@ paths:
 }
 
 #[test]
+fn a_relative_server_is_resolved_against_where_the_document_came_from() {
+    // The real Swagger Petstore declares `url: /api/v3`, and taken literally
+    // it imports to a `base_url` nothing can send to.
+    let collections = import_from(
+        r#"
+openapi: 3.0.3
+info: { title: Pet Store, version: "1" }
+servers: [{ url: /api/v3 }]
+paths:
+  /pet: { get: { operationId: getPet, responses: {} } }
+"#,
+        "https://petstore3.swagger.io/api/v3/openapi.json",
+    );
+
+    assert_eq!(
+        collections[0].variables.get(BASE_URL).map(String::as_str),
+        Some("https://petstore3.swagger.io/api/v3")
+    );
+}
+
+#[test]
+fn a_description_with_no_server_falls_back_to_the_host_it_came_from() {
+    let collections = import_from(
+        "openapi: 3.0.0\ninfo: { title: Bare, version: \"1\" }\npaths:\n  /ping: { get: { operationId: ping, responses: {} } }\n",
+        "https://api.example.com/spec/openapi.yaml",
+    );
+
+    assert_eq!(
+        collections[0].variables.get(BASE_URL).map(String::as_str),
+        Some("https://api.example.com")
+    );
+}
+
+#[test]
+fn a_relative_server_in_a_local_file_is_left_as_written() {
+    // There is no origin to join it to, and inventing a host would be worse
+    // than a `base_url` that is visibly incomplete.
+    let collections = import_from(
+        "openapi: 3.0.0\ninfo: { title: Bare, version: \"1\" }\nservers: [{ url: /api/v3 }]\npaths:\n  /ping: { get: { operationId: ping, responses: {} } }\n",
+        "./openapi.yaml",
+    );
+
+    assert_eq!(
+        collections[0].variables.get(BASE_URL).map(String::as_str),
+        Some("/api/v3")
+    );
+}
+
+#[test]
+fn an_absolute_server_ignores_the_origin() {
+    let collections = import_from(PETSTORE, "https://somewhere.else/openapi.yaml");
+
+    assert_eq!(
+        collections[0].variables.get(BASE_URL).map(String::as_str),
+        Some("https://api.example.com/v1")
+    );
+}
+
+#[test]
 fn a_document_that_is_not_a_description_says_so() {
     let error = OpenApiImporter::new()
-        .import("{\"paths\": {}}")
+        .import("{\"paths\": {}}", None)
         .unwrap_err();
 
     assert!(error.to_string().contains("openapi"), "{error}");
@@ -500,7 +566,10 @@ fn a_document_that_is_not_a_description_says_so() {
 #[test]
 fn a_document_with_no_paths_says_so() {
     let error = OpenApiImporter::new()
-        .import("openapi: 3.0.0\ninfo: { title: Empty, version: \"1\" }\n")
+        .import(
+            "openapi: 3.0.0\ninfo: { title: Empty, version: \"1\" }\n",
+            None,
+        )
         .unwrap_err();
 
     assert!(error.to_string().contains("paths"), "{error}");
@@ -509,7 +578,7 @@ fn a_document_with_no_paths_says_so() {
 #[test]
 fn a_document_that_is_neither_json_nor_yaml_says_which_two_it_tried() {
     let error = OpenApiImporter::new()
-        .import("\tthis: is: not: anything\n\t\tat all")
+        .import("\tthis: is: not: anything\n\t\tat all", None)
         .unwrap_err();
 
     assert!(

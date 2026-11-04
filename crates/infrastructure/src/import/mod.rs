@@ -6,5 +6,7 @@
 //! importer serve a path, a URL and a string pasted on a command line.
 
 pub mod curl;
+pub mod openapi;
 
 pub use curl::CurlImporter;
+pub use openapi::OpenApiImporter;

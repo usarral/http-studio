@@ -25,7 +25,7 @@ pub mod storage;
 
 pub use dynamic::SystemDynamicSource;
 pub use http::ReqwestTransport;
-pub use import::CurlImporter;
+pub use import::{CurlImporter, OpenApiImporter};
 pub use secrets::EnvSecretProvider;
 pub use storage::{
     FileSystemWorkspace, InlineWorkspace, LocalDocuments, MAX_STORED_BODY, NullHistory,

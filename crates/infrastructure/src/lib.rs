@@ -27,4 +27,5 @@ pub use http::ReqwestTransport;
 pub use secrets::EnvSecretProvider;
 pub use storage::{
     FileSystemWorkspace, InlineWorkspace, MAX_STORED_BODY, NullHistory, SqliteHistory,
+    render_collection, render_request,
 };

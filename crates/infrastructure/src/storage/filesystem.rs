@@ -354,7 +354,7 @@ fn load_collection(path: &Path, base: &Path, root: &Path) -> Result<Collection, 
         .map_err(|error| ApplicationError::repository(format!("{}: {error}", path.display())))?;
 
     let name = relative_name(&path.with_extension(""), base).ok_or_else(|| {
-        ApplicationError::repository(format!("ruta inesperada: {}", path.display()))
+        ApplicationError::repository(format!("unexpected path: {}", path.display()))
     })?;
 
     // The file context is essential: a real workspace has dozens of `.http`

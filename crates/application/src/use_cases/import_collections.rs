@@ -115,6 +115,8 @@ pub struct ImportOutput {
     pub collections: Vec<Collection>,
     /// What was written, one report per collection. Empty on a dry run.
     pub reports: Vec<ImportReport>,
+    /// What would be written, one entry per collection. Only on a dry run.
+    pub previews: Vec<String>,
 }
 
 /// Reads a document in a foreign format and writes it into the workspace.
@@ -175,9 +177,15 @@ impl ImportCollections {
         // the write. Anything it did differently would make it a worse preview
         // than no preview.
         if input.dry_run {
+            let previews = collections
+                .iter()
+                .map(|collection| self.writer.render(collection))
+                .collect();
+
             return Ok(ImportOutput {
                 collections,
                 reports: Vec::new(),
+                previews,
             });
         }
 
@@ -189,6 +197,7 @@ impl ImportCollections {
         Ok(ImportOutput {
             collections,
             reports,
+            previews: Vec::new(),
         })
     }
 
@@ -329,6 +338,10 @@ mod tests {
                     })
                     .collect(),
             })
+        }
+
+        fn render(&self, collection: &Collection) -> String {
+            format!("### {}\n", collection.name)
         }
     }
 
@@ -519,6 +532,11 @@ mod tests {
         assert_eq!(output.collections.len(), 1);
         assert!(output.reports.is_empty());
         assert!(writer.written.lock().unwrap().is_empty());
+        assert_eq!(
+            output.previews,
+            ["### pets\n"],
+            "a dry run has to show what it would have written"
+        );
     }
 
     #[tokio::test]

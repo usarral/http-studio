@@ -252,6 +252,10 @@ impl CollectionWriter for Unused {
     ) -> Result<ImportReport, ApplicationError> {
         Err(ApplicationError::repository("this engine cannot write"))
     }
+
+    fn render(&self, _collection: &Collection) -> String {
+        String::new()
+    }
 }
 
 #[async_trait]

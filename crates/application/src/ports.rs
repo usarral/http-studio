@@ -374,6 +374,18 @@ pub trait CollectionWriter: Send + Sync {
         collection: &Collection,
         policy: ImportPolicy,
     ) -> Result<ImportReport, ApplicationError>;
+
+    /// The collection as the destination would hold it.
+    ///
+    /// It is what a dry run shows, and it lives on the port rather than in
+    /// whichever interface asked for it: the moment the CLI rendered this
+    /// itself, the TUI would need the same code and the format would have
+    /// leaked out of this layer.
+    ///
+    /// It is the requests as they would be written, not a diff of the file —
+    /// a merge only touches the blocks it names, and the rest of the
+    /// destination is none of its business.
+    fn render(&self, collection: &Collection) -> String;
 }
 
 /// Reading a document the user points at by path.

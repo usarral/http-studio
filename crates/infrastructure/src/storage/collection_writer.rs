@@ -37,6 +37,10 @@ impl CollectionWriter for FileSystemWorkspace {
         self.blocking(move |root| write_collection(root, &collection, policy))
             .await
     }
+
+    fn render(&self, collection: &Collection) -> String {
+        http_writer::render_collection(collection)
+    }
 }
 
 /// Writes one collection, synchronously.

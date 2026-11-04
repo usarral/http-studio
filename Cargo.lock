@@ -1009,6 +1009,7 @@ dependencies = [
  "http-studio-domain",
  "serde",
  "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]

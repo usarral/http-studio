@@ -268,3 +268,129 @@ pub trait HistoryMaintenance: Send + Sync {
     /// [`ApplicationError::Repository`] when the index cannot be written.
     async fn prune(&self, scope: PruneScope) -> Result<u64, ApplicationError>;
 }
+
+/// Turning a document written in someone else's format into this workspace's
+/// model.
+///
+/// It is a port rather than a function because the format is the part that
+/// varies — a cURL command today, an OpenAPI description next to it, a Postman
+/// collection tomorrow — while what happens afterwards does not. The use case
+/// that imports knows none of them, so adding a format never means touching
+/// the orchestration.
+pub trait CollectionImporter: Send + Sync {
+    /// Converts the document into collections ready to be written.
+    ///
+    /// Each returned [`Collection`]'s name is the destination the format
+    /// *suggests* — an OpenAPI tag, the name of the operation's group — which
+    /// the caller is free to override.
+    ///
+    /// # Errors
+    ///
+    /// [`ApplicationError::Import`] when the document is not the format it was
+    /// taken for, or holds something that cannot be expressed as a request.
+    fn import(&self, document: &str) -> Result<Vec<Collection>, ApplicationError>;
+}
+
+/// What an import does when the destination already holds that request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ImportPolicy {
+    /// Leaves what is already there and reports it as skipped.
+    ///
+    /// The default, because importing twice is how a specification gets
+    /// followed as it changes, and silently overwriting would throw away
+    /// whatever the person edited after the first import.
+    #[default]
+    Skip,
+    /// Replaces the request that is there, leaving the rest of the file alone.
+    Replace,
+}
+
+/// What became of one request during an import.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportOutcome {
+    /// It was not in the destination and was added.
+    Created,
+    /// It was there and its block was rewritten.
+    Replaced,
+    /// It was there and [`ImportPolicy::Skip`] left it alone.
+    Skipped,
+}
+
+/// One request's fate, as the writer reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedRequest {
+    /// The identifier the request ended up with in the workspace.
+    pub id: RequestId,
+    /// What was done with it.
+    pub outcome: ImportOutcome,
+}
+
+/// What an import did to one collection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportReport {
+    /// The collection's name in the workspace.
+    pub collection: String,
+    /// Where it was written, in whatever terms the adapter uses — a path, for
+    /// the file system. It exists to be shown: "nothing happened" and "it went
+    /// somewhere you were not looking" are the two failure modes of an import,
+    /// and naming the destination rules out the second.
+    pub location: String,
+    /// Each request's fate, in the order they were imported.
+    pub requests: Vec<ImportedRequest>,
+}
+
+impl ImportReport {
+    /// How many requests ended with `outcome`.
+    #[must_use]
+    pub fn count(&self, outcome: ImportOutcome) -> usize {
+        self.requests
+            .iter()
+            .filter(|request| request.outcome == outcome)
+            .count()
+    }
+}
+
+/// Writing collections into the workspace.
+///
+/// It is [`CollectionRepository`]'s mirror image, and it takes a [`Collection`]
+/// rather than text on purpose: how a collection becomes bytes is the storage
+/// adapter's business, which is what keeps the import use case from having to
+/// know the `.http` format exists.
+#[async_trait]
+pub trait CollectionWriter: Send + Sync {
+    /// Writes the collection, merging it into what is already there.
+    ///
+    /// Merging and not replacing: a collection on disk may hold requests
+    /// nobody imported, and an import that wiped them would make re-running it
+    /// something to be afraid of.
+    ///
+    /// # Errors
+    ///
+    /// [`ApplicationError::Repository`] when the destination cannot be written,
+    /// or when the collection's name does not name a place inside the
+    /// workspace.
+    async fn write(
+        &self,
+        collection: &Collection,
+        policy: ImportPolicy,
+    ) -> Result<ImportReport, ApplicationError>;
+}
+
+/// Reading a document the user points at by path.
+///
+/// Kept apart from [`CollectionRepository`] because it reads files that are
+/// **not** part of the workspace: the OpenAPI description being imported lives
+/// wherever the person keeps it, and the workspace's boundary rules — which
+/// deliberately refuse `../../.ssh/id_rsa` — have no say over what someone
+/// names on their own command line.
+#[async_trait]
+pub trait DocumentLoader: Send + Sync {
+    /// Reads the document at `path` as UTF-8 text.
+    ///
+    /// # Errors
+    ///
+    /// [`ApplicationError::Repository`] when it cannot be read, naming the
+    /// path: with a relative path, which directory it was resolved against is
+    /// the whole answer.
+    async fn load(&self, path: &str) -> Result<String, ApplicationError>;
+}

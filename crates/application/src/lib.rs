@@ -31,8 +31,12 @@ pub use engine::{Engine, EnginePorts};
 pub type HistoryEntryList = Vec<http_studio_domain::HistoryEntry>;
 pub use error::ApplicationError;
 pub use ports::{
-    CollectionRepository, DynamicSource, EnvironmentRepository, ExchangeRecorder, ExecutionStream,
-    HistoryMaintenance, HistoryQuery, HistoryReader, HttpTransport, LocatedRequest, PruneScope,
-    RequestSource, SecretProvider,
+    CollectionImporter, CollectionRepository, CollectionWriter, DocumentLoader, DynamicSource,
+    EnvironmentRepository, ExchangeRecorder, ExecutionStream, HistoryMaintenance, HistoryQuery,
+    HistoryReader, HttpTransport, ImportOutcome, ImportPolicy, ImportReport, ImportedRequest,
+    LocatedRequest, PruneScope, RequestSource, SecretProvider,
 };
-pub use use_cases::{ListRequests, PreviewRequest, SendRequest, SendRequestInput};
+pub use use_cases::{
+    ImportCollections, ImportInput, ImportOutput, ImportSource, ListRequests, PreviewRequest,
+    SendRequest, SendRequestInput,
+};

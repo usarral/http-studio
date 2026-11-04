@@ -19,3 +19,6 @@ futures-util = "0.3.34"
 http-studio-domain = { version = "0.1.0", path = "../domain" }
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.20"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

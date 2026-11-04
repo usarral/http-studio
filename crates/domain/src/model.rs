@@ -35,6 +35,22 @@ impl RequestId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// The same request seen as part of another collection.
+    ///
+    /// An identifier is the logical path `<collection>/<name>`, so moving a
+    /// request between collections is replacing everything before the first
+    /// slash. It is here, and not in whoever moves it, because the shape of an
+    /// identifier is the domain's rule: an importer that assembles one by hand
+    /// would be free to invent a different one.
+    #[must_use]
+    pub fn in_collection(&self, collection: &str) -> Self {
+        let name = self
+            .0
+            .split_once('/')
+            .map_or(self.0.as_str(), |(_, name)| name);
+        Self(format!("{collection}/{name}"))
+    }
 }
 
 impl std::fmt::Display for RequestId {
@@ -223,8 +239,10 @@ pub struct RequestDefinition {
 
 /// A fully interpolated and validated request, ready for the transport.
 ///
-/// The only way to obtain this type is through the resolution service, which
-/// guarantees by construction that no placeholders are left.
+/// A request written by a person only becomes one of these through the
+/// resolution service, which guarantees by construction that no placeholders
+/// are left. The exception is [`ResolvedRequest::get`], for the requests the
+/// engine makes on its own behalf and that never had a definition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedRequest {
     /// The identifier of the definition it came from.
@@ -243,6 +261,41 @@ pub struct ResolvedRequest {
     /// definition: this struct is the only thing it receives.
     #[serde(default)]
     pub options: RequestOptions,
+}
+
+impl ResolvedRequest {
+    /// A bare `GET`: no headers, no body, nothing to interpolate.
+    ///
+    /// It exists for the requests the engine makes for itself — fetching an
+    /// OpenAPI description in order to import it, say — which have no
+    /// [`RequestDefinition`] behind them and so cannot come out of the
+    /// resolver. Validating the URL here means they fail with the same
+    /// [`crate::DomainError::InvalidUrl`] as a request somebody wrote, rather
+    /// than with whatever error the caller felt like inventing.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::DomainError::InvalidUrl`] when `url` is not a valid absolute
+    /// URL.
+    pub fn get(
+        id: RequestId,
+        url: &str,
+        options: RequestOptions,
+    ) -> Result<Self, crate::DomainError> {
+        let parsed = url::Url::parse(url).map_err(|error| crate::DomainError::InvalidUrl {
+            url: url.to_owned(),
+            reason: error.to_string(),
+        })?;
+
+        Ok(Self {
+            id,
+            method: HttpMethod::Get,
+            url: parsed,
+            headers: Vec::new(),
+            body: Body::Empty,
+            options,
+        })
+    }
 }
 
 /// The response's status line and headers.
@@ -443,4 +496,74 @@ pub struct Collection {
     /// The requests it contains.
     #[serde(default)]
     pub requests: Vec<RequestDefinition>,
+}
+
+#[cfg(test)]
+mod tests {
+    // In tests, `unwrap` documents the expectation and its panic IS the failure.
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn a_bare_get_validates_its_url() {
+        let error = ResolvedRequest::get(
+            RequestId::new("import/document"),
+            "not a url",
+            RequestOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(error, crate::DomainError::InvalidUrl { .. }),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_bare_get_carries_its_transport_options() {
+        // The whole point of the constructor: fetching a document from a host
+        // with its own CA has to be able to opt out of verification too.
+        let request = ResolvedRequest::get(
+            RequestId::new("import/document"),
+            "https://api.example.com/openapi.json",
+            RequestOptions { insecure_tls: true },
+        )
+        .unwrap();
+
+        assert_eq!(request.method, HttpMethod::Get);
+        assert!(request.options.insecure_tls);
+        assert!(request.headers.is_empty());
+    }
+
+    #[test]
+    fn re_homing_an_identifier_replaces_its_collection() {
+        let id = RequestId::new("petstore/get-pet");
+
+        assert_eq!(
+            id.in_collection("api").as_str(),
+            "api/get-pet",
+            "the name after the slash is what identifies the request"
+        );
+    }
+
+    #[test]
+    fn re_homing_an_identifier_with_no_collection_gives_it_one() {
+        assert_eq!(
+            RequestId::new("get-pet").in_collection("api").as_str(),
+            "api/get-pet"
+        );
+    }
+
+    #[test]
+    fn re_homing_keeps_the_nesting_inside_the_name() {
+        // Only the first segment is the collection: an identifier coming from
+        // `admin/users/list` keeps `users/list` as its name.
+        assert_eq!(
+            RequestId::new("admin/users/list")
+                .in_collection("api")
+                .as_str(),
+            "api/users/list"
+        );
+    }
 }

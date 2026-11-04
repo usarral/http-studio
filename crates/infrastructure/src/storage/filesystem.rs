@@ -123,7 +123,11 @@ impl FileSystemWorkspace {
     }
 
     /// Runs a blocking load on Tokio's blocking task pool.
-    async fn blocking<T, F>(&self, load: F) -> Result<T, ApplicationError>
+    ///
+    /// Visible to the rest of `storage` so the adapters split across modules —
+    /// writing a collection, for one — do not each grow their own copy of the
+    /// same `spawn_blocking` plumbing.
+    pub(super) async fn blocking<T, F>(&self, load: F) -> Result<T, ApplicationError>
     where
         T: Send + 'static,
         F: FnOnce(&Path) -> Result<T, ApplicationError> + Send + 'static,

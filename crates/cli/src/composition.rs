@@ -11,13 +11,13 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use http_studio_application::{
-    CollectionRepository, Engine, EnginePorts, EnvironmentRepository, ExchangeRecorder,
-    HistoryMaintenance, HistoryReader, RequestSource,
+    CollectionRepository, CollectionWriter, Engine, EnginePorts, EnvironmentRepository,
+    ExchangeRecorder, HistoryMaintenance, HistoryReader, RequestSource,
 };
 use http_studio_domain::RequestDefinition;
 use http_studio_infrastructure::{
-    EnvSecretProvider, FileSystemWorkspace, InlineWorkspace, NullHistory, ReqwestTransport,
-    SqliteHistory, SystemDynamicSource,
+    EnvSecretProvider, FileSystemWorkspace, InlineWorkspace, LocalDocuments, NullHistory,
+    ReqwestTransport, SqliteHistory, SystemDynamicSource,
 };
 
 /// The total timeout per request.
@@ -42,6 +42,7 @@ pub(crate) fn build_engine(workspace: Option<PathBuf>, history_enabled: bool) ->
 
     let filesystem = Arc::new(FileSystemWorkspace::new(root));
     assemble(
+        filesystem.clone(),
         filesystem.clone(),
         filesystem.clone(),
         filesystem,
@@ -72,7 +73,13 @@ pub(crate) fn build_inline_engine(
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let filesystem = Arc::new(FileSystemWorkspace::new(root));
 
-    assemble(inline.clone(), filesystem, inline, history_enabled)
+    assemble(
+        inline.clone(),
+        filesystem.clone(),
+        inline,
+        filesystem,
+        history_enabled,
+    )
 }
 
 /// Builds the engine without demanding a workspace.
@@ -91,7 +98,13 @@ pub(crate) fn build_index_engine(workspace: Option<PathBuf>) -> Result<Engine> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     let filesystem = Arc::new(FileSystemWorkspace::new(root));
-    assemble(filesystem.clone(), filesystem.clone(), filesystem, true)
+    assemble(
+        filesystem.clone(),
+        filesystem.clone(),
+        filesystem.clone(),
+        filesystem,
+        true,
+    )
 }
 
 /// Locates the workspace root, or `None` when there is none.
@@ -109,6 +122,7 @@ fn assemble(
     collections: Arc<dyn CollectionRepository>,
     environments: Arc<dyn EnvironmentRepository>,
     source: Arc<dyn RequestSource>,
+    writer: Arc<dyn CollectionWriter>,
     history_enabled: bool,
 ) -> Result<Engine> {
     let transport = Arc::new(
@@ -126,6 +140,11 @@ fn assemble(
         history,
         maintenance,
         source,
+        writer,
+        // Documents to import come from outside the workspace, so the loader
+        // is not the workspace adapter: it reads whatever path the person
+        // typed, which is the one thing the workspace deliberately refuses.
+        documents: Arc::new(LocalDocuments::new()),
     }))
 }
 

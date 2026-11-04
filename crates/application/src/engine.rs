@@ -16,11 +16,11 @@ use std::sync::Arc;
 use http_studio_domain::{HistoryDetail, HistoryStats, RequestId};
 
 use crate::ports::{
-    CollectionRepository, DynamicSource, EnvironmentRepository, ExchangeRecorder,
-    HistoryMaintenance, HistoryQuery, HistoryReader, HttpTransport, PruneScope, RequestSource,
-    SecretProvider,
+    CollectionImporter, CollectionRepository, CollectionWriter, DocumentLoader, DynamicSource,
+    EnvironmentRepository, ExchangeRecorder, HistoryMaintenance, HistoryQuery, HistoryReader,
+    HttpTransport, PruneScope, RequestSource, SecretProvider,
 };
-use crate::use_cases::{ListRequests, PreviewRequest, SendRequest};
+use crate::use_cases::{ImportCollections, ListRequests, PreviewRequest, SendRequest};
 use crate::{ApplicationError, HistoryEntryList};
 
 /// The ports an [`Engine`] is assembled from.
@@ -48,6 +48,10 @@ pub struct EnginePorts {
     pub maintenance: Arc<dyn HistoryMaintenance>,
     /// Access to the requests' source text.
     pub source: Arc<dyn RequestSource>,
+    /// Writing collections into the workspace.
+    pub writer: Arc<dyn CollectionWriter>,
+    /// Reading documents the user points at, from outside the workspace.
+    pub documents: Arc<dyn DocumentLoader>,
 }
 
 /// The HTTP Studio engine with all of its dependencies resolved.
@@ -62,6 +66,8 @@ pub struct Engine {
     history: Arc<dyn HistoryReader>,
     maintenance: Arc<dyn HistoryMaintenance>,
     source: Arc<dyn RequestSource>,
+    writer: Arc<dyn CollectionWriter>,
+    documents: Arc<dyn DocumentLoader>,
 }
 
 impl Engine {
@@ -78,6 +84,8 @@ impl Engine {
             history: ports.history,
             maintenance: ports.maintenance,
             source: ports.source,
+            writer: ports.writer,
+            documents: ports.documents,
         }
     }
 
@@ -102,6 +110,22 @@ impl Engine {
             Arc::clone(&self.environments),
             Arc::clone(&self.secrets),
             Arc::clone(&self.dynamic),
+        )
+    }
+
+    /// The import use case, for the format `importer` understands.
+    ///
+    /// The importer arrives here rather than in [`EnginePorts`] because it is
+    /// the only dependency that changes per invocation: `hts import curl` and
+    /// `hts import openapi` are the same operation over two different readers,
+    /// and the engine has no reason to learn either format's name.
+    #[must_use]
+    pub fn import_collections(&self, importer: Arc<dyn CollectionImporter>) -> ImportCollections {
+        ImportCollections::new(
+            importer,
+            Arc::clone(&self.writer),
+            Arc::clone(&self.documents),
+            Arc::clone(&self.transport),
         )
     }
 

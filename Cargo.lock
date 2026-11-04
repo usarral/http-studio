@@ -1026,6 +1026,7 @@ dependencies = [
  "http-studio-rpc",
  "http-studio-tui",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 

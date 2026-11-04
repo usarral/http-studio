@@ -11,13 +11,13 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use http_studio_application::{
-    CollectionRepository, CollectionWriter, Engine, EnginePorts, EnvironmentRepository,
-    ExchangeRecorder, HistoryMaintenance, HistoryReader, RequestSource,
+    CollectionImporter, CollectionRepository, CollectionWriter, Engine, EnginePorts,
+    EnvironmentRepository, ExchangeRecorder, HistoryMaintenance, HistoryReader, RequestSource,
 };
 use http_studio_domain::RequestDefinition;
 use http_studio_infrastructure::{
-    EnvSecretProvider, FileSystemWorkspace, InlineWorkspace, LocalDocuments, NullHistory,
-    ReqwestTransport, SqliteHistory, SystemDynamicSource,
+    CurlImporter, EnvSecretProvider, FileSystemWorkspace, InlineWorkspace, LocalDocuments,
+    NullHistory, ReqwestTransport, SqliteHistory, SystemDynamicSource,
 };
 
 /// The total timeout per request.
@@ -105,6 +105,40 @@ pub(crate) fn build_index_engine(workspace: Option<PathBuf>) -> Result<Engine> {
         filesystem,
         true,
     )
+}
+
+/// Builds the engine for an import.
+///
+/// `writing` is what decides whether a workspace is required: a dry run only
+/// converts, and demanding a `collections/` directory in order to show what a
+/// command looks like would be borrowing a requirement from the operation next
+/// door.
+///
+/// # Errors
+///
+/// If `writing` and no workspace is found, or the HTTP client cannot be built.
+pub(crate) fn build_import_engine(workspace: Option<PathBuf>, writing: bool) -> Result<Engine> {
+    if writing {
+        return build_engine(workspace, false);
+    }
+
+    let root = resolve_root(workspace)?
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let filesystem = Arc::new(FileSystemWorkspace::new(root));
+
+    assemble(
+        filesystem.clone(),
+        filesystem.clone(),
+        filesystem.clone(),
+        filesystem,
+        false,
+    )
+}
+
+/// The importer that reads a cURL command.
+#[must_use]
+pub(crate) fn curl_importer(name: Option<String>) -> Arc<dyn CollectionImporter> {
+    Arc::new(CurlImporter::new().with_name(name))
 }
 
 /// Locates the workspace root, or `None` when there is none.

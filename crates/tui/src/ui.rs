@@ -829,7 +829,7 @@ mod tests {
     #[test]
     fn an_unclosed_brace_does_not_break_the_highlighting() {
         let spans = highlight_variables("https://{{host");
-        assert!(!spans.is_empty());
+        assert_ne!(spans, Vec::new());
     }
 
     #[test]

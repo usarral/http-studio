@@ -415,7 +415,7 @@ async fn the_preview_executes_nothing() {
     )
     .await;
 
-    assert!(events(&responses).is_empty());
+    assert_eq!(events(&responses), Vec::<&serde_json::Value>::new());
 }
 
 #[tokio::test]
@@ -606,7 +606,7 @@ async fn a_client_notification_gets_no_answer() {
     )
     .await;
 
-    assert!(responses.is_empty());
+    assert_eq!(responses, Vec::<serde_json::Value>::new());
 }
 
 #[tokio::test]

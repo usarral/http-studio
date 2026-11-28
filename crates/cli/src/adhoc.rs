@@ -213,7 +213,7 @@ mod tests {
                 content: "hello".to_owned()
             }
         );
-        assert!(definition.headers.is_empty());
+        assert_eq!(definition.headers, Vec::new());
     }
 
     #[test]
